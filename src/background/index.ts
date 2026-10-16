@@ -22,17 +22,6 @@ chrome.runtime.onInstalled.addListener(async () => {
       });
     });
   }
-
-  // Automatically open the Side Panel immediately upon installation / update!
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const activeTab = tabs[0];
-    if (activeTab?.windowId && chrome.sidePanel && chrome.sidePanel.open) {
-      await chrome.sidePanel.open({ windowId: activeTab.windowId });
-    }
-  } catch (err) {
-    console.warn('Auto-open side panel failed (will open on click or Alt+C):', err);
-  }
 });
 
 // Handle right-click context menu
@@ -57,9 +46,24 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-// Listen to messages from Side Panel
+// Listen to messages from Side Panel and Content Script
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const { action, payload } = message || {};
+
+  if (action === 'OPEN_SIDE_PANEL') {
+    const tabId = _sender.tab?.id;
+    const windowId = _sender.tab?.windowId;
+    if (windowId && chrome.sidePanel && chrome.sidePanel.open) {
+      chrome.sidePanel.open({ windowId }).catch((err) => {
+        console.warn('Failed to open sidePanel by windowId, trying tabId:', err);
+        if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch(console.warn);
+        }
+      });
+    }
+    sendResponse({ success: true });
+    return true;
+  }
 
   if (action === 'GET_ACTIVE_TAB') {
     chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
