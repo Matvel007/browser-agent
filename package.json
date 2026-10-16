@@ -1,7 +1,7 @@
 {
-  "name": "chromium-devtools-copilot",
+  "name": "chromium-agent",
   "version": "1.0.0",
-  "description": "ChatGPT-style AI Copilot with Chrome DevTools Protocol automation in Side Panel",
+  "description": "ChatGPT-style AI Agent for Chromium browsers with Chrome DevTools Protocol automation",
   "private": true,
   "type": "module",
   "scripts": {

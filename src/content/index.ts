@@ -1,7 +1,7 @@
-// DevTools Copilot Content Script
-// Injects floating Copilot trigger widget and provides element highlighting
+// Chromium Agent Content Script
+// Injects floating Chromium Agent trigger widget and provides element highlighting
 
-console.log('[DevTools Copilot] Content script initialized on:', window.location.href);
+console.log('[Chromium Agent] Content script initialized on:', window.location.href);
 
 let highlightOverlay: HTMLDivElement | null = null;
 
@@ -107,12 +107,12 @@ function injectFloatingCopilotButton() {
 
   const btn = document.createElement('div');
   btn.className = 'copilot-btn';
-  btn.title = 'DevTools Copilot';
+  btn.title = 'Chromium Agent';
 
   // SVG Icon (Copilot / AI Wrench)
   btn.innerHTML = `
     <div class="copilot-tooltip">
-      <span>DevTools Copilot</span>
+      <span>Chromium Agent</span>
       <kbd>Alt+C</kbd>
     </div>
     <svg class="copilot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

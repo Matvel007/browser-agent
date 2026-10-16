@@ -89,7 +89,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="px-4 py-3 border-b border-[#383838] flex items-center justify-between bg-[#171717]">
           <h2 className="font-semibold text-[#ececec] flex items-center gap-2">
             <Sliders className="w-4 h-4 text-[#10a37f]" />
-            Настройки AI и DevTools
+            Настройки Chromium Agent
           </h2>
           <button
             onClick={onClose}

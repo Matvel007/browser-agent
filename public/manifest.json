@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DevTools AI Copilot",
+  "name": "Chromium Agent",
   "version": "1.0.0",
-  "description": "ChatGPT-style AI Agent with Chrome DevTools Protocol & Browser Automation",
+  "description": "ChatGPT-style AI Agent for Chromium browsers with DevTools Protocol automation",
   "permissions": [
     "sidePanel",
     "debugger",
@@ -23,7 +23,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open DevTools AI Copilot"
+    "default_title": "Open Chromium Agent"
   },
   "commands": {
     "_execute_action": {
@@ -31,7 +31,7 @@
         "default": "Alt+C",
         "mac": "Alt+C"
       },
-      "description": "Открыть DevTools AI Copilot"
+      "description": "Открыть Chromium Agent"
     }
   },
   "content_scripts": [

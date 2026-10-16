@@ -17,7 +17,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     chrome.contextMenus.removeAll(() => {
       chrome.contextMenus.create({
         id: 'open_devtools_copilot',
-        title: '🤖 Открыть DevTools AI Copilot',
+        title: '🤖 Открыть Chromium Agent',
         contexts: ['page', 'selection', 'link', 'editable'],
       });
     });

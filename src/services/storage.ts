@@ -3,7 +3,7 @@ import { AppSettings, ChatMessage } from '../types';
 const SETTINGS_KEY = 'devtools_copilot_settings';
 const CHAT_HISTORY_KEY = 'devtools_copilot_history';
 
-export const DEFAULT_SYSTEM_PROMPT = `You are Chrome DevTools Copilot, an expert AI assistant living inside Chromium with direct access to the Chrome DevTools Protocol (CDP) and browser automation.
+export const DEFAULT_SYSTEM_PROMPT = `You are Chromium Agent, an expert AI assistant living inside Chromium with direct access to the Chrome DevTools Protocol (CDP) and browser automation.
 You can inspect the DOM, view console logs and runtime errors, monitor network traffic and API responses, simulate real hardware mouse clicks and keystrokes, and navigate web pages.
 
 GUIDELINES:
