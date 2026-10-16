@@ -1,4 +1,14 @@
-export type ProviderType = 'openai' | 'deepseek' | 'gemini' | 'anthropic' | 'custom';
+export type ProviderType =
+  | 'routerai'
+  | 'aitunnel'
+  | 'openai'
+  | 'deepseek'
+  | 'gemini'
+  | 'anthropic'
+  | 'custom';
+
+export type AppTheme = 'system' | 'dark' | 'light';
+export type AppLang = 'ru' | 'en' | 'auto';
 
 export interface AppSettings {
   provider: ProviderType;
@@ -8,6 +18,13 @@ export interface AppSettings {
   temperature: number;
   systemPrompt?: string;
   autoAttachDebugger: boolean;
+  theme: AppTheme;
+  language: AppLang;
+  saveSessionHistory: boolean;
+  maxHistoryMessages: number;
+  maxContextTokens: number;
+  compressionThreshold: number;
+  customHotkey: string;
 }
 
 export interface ToolCallRecord {
@@ -27,6 +44,14 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCallRecord[];
   isStreaming?: boolean;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
 }
 
 export interface ActiveTabInfo {

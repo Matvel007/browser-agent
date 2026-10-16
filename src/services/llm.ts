@@ -140,7 +140,97 @@ export interface StreamCallbacks {
   onToolCallStart?: (toolCall: ToolCallRecord) => void;
 }
 
+export function estimateTokens(text: string): number {
+  return Math.ceil((text || '').length / 3.5);
+}
+
+export function estimateHistoryTokens(messages: ChatMessage[], systemPrompt?: string): number {
+  let chars = (systemPrompt || '').length;
+  for (const m of messages) {
+    chars += (m.content || '').length;
+    if (m.toolCalls) {
+      chars += JSON.stringify(m.toolCalls).length;
+    }
+  }
+  return Math.ceil(chars / 3.5);
+}
+
 export class LLMClient {
+  public static async fetchAvailableModels(settings: AppSettings): Promise<string[]> {
+    if (!settings.apiKey) {
+      throw new Error('API-ключ не указан. Введите ключ для загрузки моделей.');
+    }
+
+    let baseUrl = 'https://api.openai.com/v1';
+    if (settings.provider === 'routerai') {
+      baseUrl = 'https://routerai.ru/api/v1';
+    } else if (settings.provider === 'aitunnel') {
+      baseUrl = 'https://api.aitunnel.ru/v1';
+    } else if (settings.provider === 'deepseek') {
+      baseUrl = 'https://api.deepseek.com';
+    } else if (settings.provider === 'custom' && settings.customBaseUrl) {
+      baseUrl = settings.customBaseUrl.replace(/\/+$/, '');
+    } else if (settings.provider === 'gemini') {
+      // Gemini models
+      return ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+    } else if (settings.provider === 'anthropic') {
+      // Anthropic models
+      return [
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+        'claude-3-opus-20240229',
+      ];
+    }
+
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: {
+        Authorization: `Bearer ${settings.apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Ошибка загрузки моделей (${response.status}): ${err.slice(0, 100)}`);
+    }
+
+    const json = await response.json();
+    const rawList: any[] = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+
+    // Filter out non-text/chat models
+    const EXCLUDED_PATTERNS = [
+      'dall-e',
+      'dalle',
+      'flux',
+      'midjourney',
+      'imagen',
+      'stable-diffusion',
+      'sdxl',
+      'whisper',
+      'tts',
+      'audio',
+      'voice',
+      'speech',
+      'transcription',
+      'embedding',
+      'embed',
+      'bge',
+      'moderation',
+      'guard',
+      'rerank',
+    ];
+
+    const filtered = rawList
+      .map((item) => (typeof item === 'string' ? item : item.id || item.name || ''))
+      .filter((id: string) => {
+        if (!id) return false;
+        const lower = id.toLowerCase();
+        return !EXCLUDED_PATTERNS.some((p) => lower.includes(p));
+      })
+      .sort();
+
+    return Array.from(new Set(filtered));
+  }
+
   public static async chat(
     settings: AppSettings,
     messages: ChatMessage[],
@@ -148,21 +238,33 @@ export class LLMClient {
     abortSignal?: AbortSignal
   ): Promise<{ content: string; toolCalls?: ToolCallRecord[] }> {
     if (!settings.apiKey) {
-      throw new Error('API key is missing. Please set your API key in Settings (gear icon in the top right).');
+      throw new Error('API-ключ не указан. Настройте провайдер и модель.');
     }
 
-    if (settings.provider === 'openai' || settings.provider === 'deepseek' || settings.provider === 'custom') {
-      return this.chatOpenAICompatible(settings, messages, callbacks, abortSignal);
+    // Apply context limits
+    let effectiveMessages = [...messages];
+    if (settings.maxHistoryMessages && settings.maxHistoryMessages > 0) {
+      effectiveMessages = effectiveMessages.slice(-settings.maxHistoryMessages);
+    }
+
+    if (
+      settings.provider === 'routerai' ||
+      settings.provider === 'aitunnel' ||
+      settings.provider === 'openai' ||
+      settings.provider === 'deepseek' ||
+      settings.provider === 'custom'
+    ) {
+      return this.chatOpenAICompatible(settings, effectiveMessages, callbacks, abortSignal);
     } else if (settings.provider === 'gemini') {
-      return this.chatGemini(settings, messages, callbacks, abortSignal);
+      return this.chatGemini(settings, effectiveMessages, callbacks, abortSignal);
     } else if (settings.provider === 'anthropic') {
-      return this.chatAnthropic(settings, messages, callbacks, abortSignal);
+      return this.chatAnthropic(settings, effectiveMessages, callbacks, abortSignal);
     }
 
-    throw new Error(`Unsupported provider: ${settings.provider}`);
+    throw new Error(`Неподдерживаемый провайдер: ${settings.provider}`);
   }
 
-  // --- OpenAI / DeepSeek / Custom provider ---
+  // --- OpenAI / RouterAI / AItunnel / DeepSeek / Custom provider ---
   private static async chatOpenAICompatible(
     settings: AppSettings,
     messages: ChatMessage[],
@@ -172,7 +274,13 @@ export class LLMClient {
     let baseUrl = 'https://api.openai.com/v1';
     let defaultModel = 'gpt-4o';
 
-    if (settings.provider === 'deepseek') {
+    if (settings.provider === 'routerai') {
+      baseUrl = 'https://routerai.ru/api/v1';
+      defaultModel = 'openai/gpt-4o-mini';
+    } else if (settings.provider === 'aitunnel') {
+      baseUrl = 'https://api.aitunnel.ru/v1';
+      defaultModel = 'gpt-4o-mini';
+    } else if (settings.provider === 'deepseek') {
       baseUrl = 'https://api.deepseek.com';
       defaultModel = 'deepseek-chat';
     } else if (settings.provider === 'custom' && settings.customBaseUrl) {
@@ -345,7 +453,6 @@ export class LLMClient {
     const model = settings.model || 'gemini-2.0-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${settings.apiKey}&alt=sse`;
 
-    // Map messages to Gemini contents
     const contents: any[] = [];
     for (const msg of messages) {
       const role = msg.role === 'assistant' ? 'model' : 'user';
@@ -355,7 +462,6 @@ export class LLMClient {
       });
     }
 
-    // Map tools to Gemini function declarations
     const functionDeclarations = DEVTOOLS_TOOLS.map((t) => ({
       name: t.name,
       description: t.description,
@@ -452,7 +558,6 @@ export class LLMClient {
       }
     }
 
-    // Anthropic tools schema
     const tools = DEVTOOLS_TOOLS.map((t) => ({
       name: t.name,
       description: t.description,

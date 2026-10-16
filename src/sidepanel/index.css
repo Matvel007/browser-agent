@@ -2,10 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbars matching ChatGPT */
+:root {
+  --agent-bg: #ffffff;
+  --agent-surface: #f3f3f4;
+  --agent-card: #f8f9fa;
+  --agent-border: #e2e4e8;
+  --agent-text: #1f2328;
+  --agent-muted: #656d76;
+  --agent-accent: #0969da;
+  --agent-accent-hover: #0856b3;
+}
+
+.dark {
+  --agent-bg: #1e1e1e;
+  --agent-surface: #252526;
+  --agent-card: #2d2d2d;
+  --agent-border: #383838;
+  --agent-text: #cccccc;
+  --agent-muted: #858585;
+  --agent-accent: #3794ff;
+  --agent-accent-hover: #1e7be6;
+}
+
+/* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -13,60 +35,61 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(128, 128, 128, 0.25);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(128, 128, 128, 0.45);
 }
 
-/* Markdown typography styles for chat */
-.prose-dark {
-  color: #ececec;
+/* Markdown typography styles */
+.prose-agent {
+  color: var(--agent-text);
 }
-.prose-dark p {
+.prose-agent p {
   margin-bottom: 0.75rem;
-  line-height: 1.6;
+  line-height: 1.55;
 }
-.prose-dark p:last-child {
+.prose-agent p:last-child {
   margin-bottom: 0;
 }
-.prose-dark pre {
-  background: #171717;
-  border: 1px solid #383838;
+.prose-agent pre {
+  background: var(--agent-surface);
+  border: 1px solid var(--agent-border);
   border-radius: 0.5rem;
   padding: 0.75rem;
   overflow-x: auto;
-  font-family: monospace;
-  font-size: 0.85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
   margin: 0.75rem 0;
 }
-.prose-dark code:not(pre code) {
-  background: #2a2a2a;
+.prose-agent code:not(pre code) {
+  background: var(--agent-surface);
+  border: 1px solid var(--agent-border);
   padding: 0.15rem 0.35rem;
   border-radius: 0.25rem;
   font-size: 0.85em;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-.prose-dark ul, .prose-dark ol {
+.prose-agent ul, .prose-agent ol {
   margin-left: 1.25rem;
   margin-bottom: 0.75rem;
 }
-.prose-dark ul {
+.prose-agent ul {
   list-style-type: disc;
 }
-.prose-dark ol {
+.prose-agent ol {
   list-style-type: decimal;
 }
-.prose-dark li {
+.prose-agent li {
   margin-bottom: 0.25rem;
 }
-.prose-dark h1, .prose-dark h2, .prose-dark h3 {
+.prose-agent h1, .prose-agent h2, .prose-agent h3 {
   font-weight: 600;
   margin-top: 1rem;
   margin-bottom: 0.5rem;
 }
-.prose-dark h1 { font-size: 1.25rem; }
-.prose-dark h2 { font-size: 1.1rem; }
-.prose-dark h3 { font-size: 1rem; }
+.prose-agent h1 { font-size: 1.25rem; }
+.prose-agent h2 { font-size: 1.1rem; }
+.prose-agent h3 { font-size: 1rem; }

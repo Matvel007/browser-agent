@@ -1,77 +1,68 @@
 import React from 'react';
-import { Settings, Trash2, Cpu, Wrench, Bug, ExternalLink, RefreshCw } from 'lucide-react';
-import { ActiveTabInfo, AppSettings } from '../../types';
+import { Settings, Trash2, Bug, Clock, Plus, Bot } from 'lucide-react';
+import { ActiveTabInfo } from '../../types';
+import { t } from '../../services/i18n';
 
 interface HeaderProps {
-  settings: AppSettings;
   activeTab: ActiveTabInfo | null;
   onOpenSettings: () => void;
+  onOpenHistory: () => void;
+  onNewChat: () => void;
   onClearChat: () => void;
   onToggleAttachDebugger: () => void;
-  onRefreshTab: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  settings,
   activeTab,
   onOpenSettings,
+  onOpenHistory,
+  onNewChat,
   onClearChat,
   onToggleAttachDebugger,
-  onRefreshTab,
 }) => {
-  const getDomain = (url: string) => {
-    try {
-      const u = new URL(url);
-      return u.hostname;
-    } catch {
-      return url.slice(0, 25);
-    }
-  };
-
   return (
-    <header className="border-b border-[#383838] bg-[#171717] px-3.5 py-2.5 flex items-center justify-between select-none">
-      {/* Left: Brand title and model selector */}
+    <header className="border-b border-agent-border bg-agent-surface px-3 py-2 flex items-center justify-between select-none">
+      {/* Brand title */}
       <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg bg-[#10a37f] flex items-center justify-center text-white shadow-sm font-semibold">
-          <Wrench className="w-4 h-4" />
+        <div className="w-6 h-6 rounded-md bg-agent-card border border-agent-border flex items-center justify-center text-agent-accent shadow-sm">
+          <Bot className="w-4 h-4" />
         </div>
-        <div>
-          <h1 className="text-sm font-semibold text-[#ececec] flex items-center gap-1.5 leading-none">
-            Chromium Agent
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a2a] text-[#10a37f] border border-[#383838] font-mono">
-              CDP
-            </span>
-          </h1>
-          {settings.apiKey && settings.model ? (
-            <p className="text-[11px] text-[#b4b4b4] flex items-center gap-1 mt-0.5">
-              <Cpu className="w-3 h-3 text-[#10a37f]" />
-              <span className="truncate max-w-[120px] font-mono">{settings.model}</span>
-            </p>
-          ) : (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              title="Нажмите, чтобы подключить провайдер и выбрать модель"
-              className="text-[11px] flex items-center gap-1 mt-0.5 text-amber-400 hover:text-amber-300 transition-colors"
-            >
-              <Cpu className="w-3 h-3 text-amber-400" />
-              <span className="truncate max-w-[140px] font-medium underline underline-offset-2">
-                Модель не выбрана
-              </span>
-            </button>
-          )}
-        </div>
+        <h1 className="text-sm font-semibold text-agent-text leading-none tracking-tight">
+          {t('app_title')}
+        </h1>
       </div>
 
-      {/* Right: Actions */}
+      {/* Action buttons */}
       <div className="flex items-center gap-1">
+        {/* New Chat */}
         <button
+          type="button"
+          onClick={onNewChat}
+          title={t('new_chat')}
+          className="p-1.5 rounded-md text-agent-muted hover:text-agent-text hover:bg-agent-card transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+
+        {/* Chat History */}
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          title={t('chat_history')}
+          className="p-1.5 rounded-md text-agent-muted hover:text-agent-text hover:bg-agent-card transition-colors"
+        >
+          <Clock className="w-4 h-4" />
+        </button>
+
+        {/* CDP Debugger Toggle */}
+        <button
+          type="button"
           onClick={onToggleAttachDebugger}
-          title={activeTab?.isAttached ? 'CDP Отладчик подключен к вкладке' : 'Нажмите для подключения CDP Отладчика'}
+          title={activeTab?.isAttached ? t('cdp_connected') : t('cdp_disconnected')}
           className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs px-2 border ${
             activeTab?.isAttached
-              ? 'bg-[#10a37f]/20 border-[#10a37f]/50 text-[#10a37f]'
-              : 'bg-[#2a2a2a] border-[#383838] text-[#b4b4b4] hover:text-[#ececec]'
+              ? 'bg-agent-accent/15 border-agent-accent/40 text-agent-accent'
+              : 'bg-agent-card border-agent-border text-agent-muted hover:text-agent-text'
           }`}
         >
           <Bug className="w-3.5 h-3.5" />
@@ -80,18 +71,22 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </button>
 
+        {/* Clear Current Chat */}
         <button
+          type="button"
           onClick={onClearChat}
-          title="Очистить диалог"
-          className="p-1.5 rounded-md text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#2a2a2a] transition-colors"
+          title={t('clear_chat')}
+          className="p-1.5 rounded-md text-agent-muted hover:text-agent-text hover:bg-agent-card transition-colors"
         >
           <Trash2 className="w-4 h-4" />
         </button>
 
+        {/* Settings */}
         <button
+          type="button"
           onClick={onOpenSettings}
-          title="Настройки API и моделей"
-          className="p-1.5 rounded-md text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#2a2a2a] transition-colors"
+          title={t('settings')}
+          className="p-1.5 rounded-md text-agent-muted hover:text-agent-text hover:bg-agent-card transition-colors"
         >
           <Settings className="w-4 h-4" />
         </button>

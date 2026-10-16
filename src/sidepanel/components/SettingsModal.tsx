@@ -1,44 +1,91 @@
-import React, { useState } from 'react';
-import { X, Key, Cpu, Globe, Sliders, Eye, EyeOff, Save, Check } from 'lucide-react';
-import { AppSettings, ProviderType } from '../../types';
+import React, { useState, useEffect } from 'react';
+import {
+  X,
+  Key,
+  Cpu,
+  Globe,
+  Sliders,
+  Eye,
+  EyeOff,
+  Save,
+  Check,
+  RefreshCw,
+  Search,
+  Keyboard,
+  Layers,
+  Moon,
+  Sun,
+  Laptop,
+} from 'lucide-react';
+import { AppSettings, ProviderType, AppTheme, AppLang } from '../../types';
+import { LLMClient } from '../../services/llm';
+import { t, i18n } from '../../services/i18n';
 
 interface SettingsModalProps {
   settings: AppSettings;
   isOpen: boolean;
   onClose: () => void;
   onSave: (settings: AppSettings) => void;
+  initialTab?: 'general' | 'models' | 'context' | 'hotkey';
 }
 
-const PROVIDER_PRESETS: Record<
-  ProviderType,
-  { label: string; defaultModel: string; models: string[]; defaultBaseUrl?: string }
-> = {
+interface ProviderPreset {
+  labelKey: string;
+  defaultModel: string;
+  defaultBaseUrl?: string;
+  popularModels: string[];
+}
+
+const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
+  routerai: {
+    labelKey: 'provider_routerai',
+    defaultModel: 'openai/gpt-4o-mini',
+    defaultBaseUrl: 'https://routerai.ru/api/v1',
+    popularModels: [
+      'openai/gpt-4o-mini',
+      'openai/gpt-4o',
+      'anthropic/claude-3.5-sonnet',
+      'deepseek/deepseek-chat',
+    ],
+  },
+  aitunnel: {
+    labelKey: 'provider_aitunnel',
+    defaultModel: 'gpt-4o-mini',
+    defaultBaseUrl: 'https://api.aitunnel.ru/v1',
+    popularModels: [
+      'gpt-4o-mini',
+      'gpt-4o',
+      'claude-3-5-sonnet-20241022',
+      'deepseek-chat',
+    ],
+  },
   openai: {
-    label: 'OpenAI',
+    labelKey: 'provider_openai',
     defaultModel: 'gpt-4o',
-    models: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo'],
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    popularModels: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo'],
   },
   deepseek: {
-    label: 'DeepSeek',
+    labelKey: 'provider_deepseek',
     defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
     defaultBaseUrl: 'https://api.deepseek.com',
+    popularModels: ['deepseek-chat', 'deepseek-reasoner'],
   },
   gemini: {
-    label: 'Google Gemini',
+    labelKey: 'provider_gemini',
     defaultModel: 'gemini-2.0-flash',
-    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    popularModels: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   },
   anthropic: {
-    label: 'Anthropic Claude',
+    labelKey: 'provider_anthropic',
     defaultModel: 'claude-3-5-sonnet-20241022',
-    models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+    popularModels: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
   },
   custom: {
-    label: 'Custom (OpenRouter/Groq/Ollama)',
-    defaultModel: 'llama-3.3-70b-versatile',
-    models: ['openrouter/auto', 'llama-3.3-70b-versatile', 'qwen-2.5-72b'],
+    labelKey: 'provider_custom',
+    defaultModel: 'openrouter/auto',
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    popularModels: ['openrouter/auto', 'llama-3.3-70b-versatile', 'qwen-2.5-72b'],
   },
 };
 
@@ -47,19 +94,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  initialTab = 'models',
 }) => {
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'context' | 'hotkey'>(initialTab);
   const [form, setForm] = useState<AppSettings>({ ...settings });
   const [showKey, setShowKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  React.useEffect(() => {
+  // Model loading state
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [modelsFetchError, setModelsFetchError] = useState<string | null>(null);
+  const [modelSearch, setModelSearch] = useState('');
+
+  useEffect(() => {
     if (isOpen) {
-      setForm({
-        ...settings,
-        model: settings.model || PROVIDER_PRESETS[settings.provider || 'openai'].defaultModel,
-      });
+      setForm({ ...settings });
+      setActiveTab(initialTab);
+      setModelsFetchError(null);
     }
-  }, [isOpen, settings]);
+  }, [isOpen, settings, initialTab]);
 
   if (!isOpen) return null;
 
@@ -68,13 +122,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setForm((prev) => ({
       ...prev,
       provider,
-      model: preset.defaultModel,
+      model: prev.model || preset.defaultModel,
       customBaseUrl: preset.defaultBaseUrl || prev.customBaseUrl || '',
     }));
+    setFetchedModels([]);
+    setModelsFetchError(null);
+  };
+
+  const handleFetchModels = async () => {
+    setIsFetchingModels(true);
+    setModelsFetchError(null);
+    try {
+      const models = await LLMClient.fetchAvailableModels(form);
+      setFetchedModels(models);
+    } catch (err: any) {
+      setModelsFetchError(err.message || t('fetch_models_error'));
+    } finally {
+      setIsFetchingModels(false);
+    }
   };
 
   const handleSave = () => {
     onSave(form);
+    if (form.language !== settings.language) {
+      i18n.init(form.language);
+    }
     setSavedSuccess(true);
     setTimeout(() => {
       setSavedSuccess(false);
@@ -82,164 +154,453 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, 600);
   };
 
+  const handleOpenBrowserShortcuts = () => {
+    chrome.runtime.sendMessage({ action: 'OPEN_SHORTCUTS_SETTINGS' });
+  };
+
+  const filteredModels = fetchedModels.filter((m) =>
+    m.toLowerCase().includes(modelSearch.toLowerCase())
+  );
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3">
-      <div className="bg-[#212121] border border-[#383838] w-full max-w-md rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-sm">
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3">
+      <div className="bg-agent-surface border border-agent-border w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-xs">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-[#383838] flex items-center justify-between bg-[#171717]">
-          <h2 className="font-semibold text-[#ececec] flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-[#10a37f]" />
-            Настройки Chromium Agent
+        <div className="px-4 py-3 border-b border-agent-border flex items-center justify-between bg-agent-card">
+          <h2 className="font-semibold text-sm text-agent-text flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-agent-accent" />
+            <span>{t('settings_title')}</span>
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-md text-[#888] hover:text-[#ececec] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded-md text-agent-muted hover:text-agent-text hover:bg-agent-surface transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Form Body */}
-        <div className="px-4 py-3.5 overflow-y-auto space-y-4 flex-1">
-          {/* Provider Selection */}
-          <div>
-            <label className="block text-xs font-medium text-[#ccc] mb-1.5">Провайдер LLM</label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(Object.keys(PROVIDER_PRESETS) as ProviderType[]).map((prov) => (
-                <button
-                  key={prov}
-                  type="button"
-                  onClick={() => handleProviderChange(prov)}
-                  className={`px-3 py-2 text-xs rounded-lg border text-left transition-all font-medium ${
-                    form.provider === prov
-                      ? 'bg-[#10a37f]/20 border-[#10a37f] text-[#10a37f]'
-                      : 'bg-[#2a2a2a] border-[#383838] text-[#ccc] hover:bg-[#333]'
-                  }`}
-                >
-                  {PROVIDER_PRESETS[prov].label}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Tab Navigation */}
+        <div className="px-4 border-b border-agent-border flex gap-1 bg-agent-card overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => setActiveTab('models')}
+            className={`py-2 px-3 border-b-2 font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === 'models'
+                ? 'border-agent-accent text-agent-text'
+                : 'border-transparent text-agent-muted hover:text-agent-text'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            <span>{t('tab_models')}</span>
+          </button>
 
-          {/* API Key */}
-          <div>
-            <label className="block text-xs font-medium text-[#ccc] mb-1.5 flex items-center justify-between">
-              <span className="flex items-center gap-1">
-                <Key className="w-3.5 h-3.5 text-[#10a37f]" />
-                API Key
-              </span>
-              <span className="text-[11px] text-[#888]">Хранится локально в расширении</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={form.apiKey}
-                onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-                placeholder={`Введите ваш ${PROVIDER_PRESETS[form.provider].label} API Key`}
-                className="w-full bg-[#2a2a2a] border border-[#383838] focus:border-[#10a37f] rounded-lg px-3 py-2 pr-9 text-xs text-[#ececec] outline-none font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#888] hover:text-[#ccc]"
-              >
-                {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('context')}
+            className={`py-2 px-3 border-b-2 font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === 'context'
+                ? 'border-agent-accent text-agent-text'
+                : 'border-transparent text-agent-muted hover:text-agent-text'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>{t('tab_context')}</span>
+          </button>
 
-          {/* Model Name */}
-          <div>
-            <label className="block text-xs font-medium text-[#ccc] mb-1.5 flex items-center gap-1">
-              <Cpu className="w-3.5 h-3.5 text-[#10a37f]" />
-              Модель
-            </label>
-            <input
-              type="text"
-              value={form.model}
-              onChange={(e) => setForm({ ...form, model: e.target.value })}
-              placeholder="e.g. gpt-4o, deepseek-chat, gemini-2.0-flash"
-              className="w-full bg-[#2a2a2a] border border-[#383838] focus:border-[#10a37f] rounded-lg px-3 py-2 text-xs text-[#ececec] outline-none font-mono mb-1.5"
-            />
-            {/* Quick Presets */}
-            <div className="flex flex-wrap gap-1">
-              {PROVIDER_PRESETS[form.provider].models.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setForm({ ...form, model: m })}
-                  className={`text-[10px] px-2 py-0.5 rounded border font-mono transition-colors ${
-                    form.model === m
-                      ? 'bg-[#10a37f]/20 border-[#10a37f] text-[#10a37f]'
-                      : 'bg-[#1e1e1e] border-[#383838] text-[#888] hover:text-[#ccc]'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('general')}
+            className={`py-2 px-3 border-b-2 font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === 'general'
+                ? 'border-agent-accent text-agent-text'
+                : 'border-transparent text-agent-muted hover:text-agent-text'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>{t('tab_general')}</span>
+          </button>
 
-          {/* Custom Base URL (if custom or deepseek) */}
-          {(form.provider === 'custom' || form.provider === 'deepseek') && (
-            <div>
-              <label className="block text-xs font-medium text-[#ccc] mb-1.5 flex items-center gap-1">
-                <Globe className="w-3.5 h-3.5 text-[#10a37f]" />
-                API Base URL
-              </label>
-              <input
-                type="text"
-                value={form.customBaseUrl || ''}
-                onChange={(e) => setForm({ ...form, customBaseUrl: e.target.value })}
-                placeholder="https://api.deepseek.com или https://openrouter.ai/api/v1"
-                className="w-full bg-[#2a2a2a] border border-[#383838] focus:border-[#10a37f] rounded-lg px-3 py-2 text-xs text-[#ececec] outline-none font-mono"
-              />
+          <button
+            type="button"
+            onClick={() => setActiveTab('hotkey')}
+            className={`py-2 px-3 border-b-2 font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === 'hotkey'
+                ? 'border-agent-accent text-agent-text'
+                : 'border-transparent text-agent-muted hover:text-agent-text'
+            }`}
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+            <span>{t('tab_hotkey')}</span>
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+          {/* TAB 1: Models & Provider */}
+          {activeTab === 'models' && (
+            <div className="space-y-3.5">
+              {/* Provider Selection */}
+              <div>
+                <label className="block font-medium text-agent-text mb-1.5">Провайдер</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {(Object.keys(PROVIDER_PRESETS) as ProviderType[]).map((prov) => (
+                    <button
+                      key={prov}
+                      type="button"
+                      onClick={() => handleProviderChange(prov)}
+                      className={`px-2.5 py-1.5 text-xs rounded-lg border text-left transition-all font-medium truncate ${
+                        form.provider === prov
+                          ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
+                          : 'bg-agent-card border-agent-border text-agent-text hover:bg-agent-border/60'
+                      }`}
+                    >
+                      {t(PROVIDER_PRESETS[prov].labelKey)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* API Key */}
+              <div>
+                <label className="block font-medium text-agent-text mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Key className="w-3.5 h-3.5 text-agent-accent" />
+                    {t('label_api_key')}
+                  </span>
+                  <span className="text-[10px] text-agent-muted">{t('api_key_stored_locally')}</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={form.apiKey}
+                    onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                    placeholder="sk-..."
+                    className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 pr-8 text-xs text-agent-text outline-none font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-agent-muted hover:text-agent-text"
+                  >
+                    {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Base URL */}
+              {form.provider !== 'gemini' && form.provider !== 'anthropic' && (
+                <div>
+                  <label className="block font-medium text-agent-text mb-1 flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5 text-agent-accent" />
+                    {t('label_base_url')}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.customBaseUrl || ''}
+                    onChange={(e) => setForm({ ...form, customBaseUrl: e.target.value })}
+                    placeholder="https://..."
+                    className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono"
+                  />
+                </div>
+              )}
+
+              {/* Model Fetching and Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-medium text-agent-text flex items-center gap-1">
+                    <Cpu className="w-3.5 h-3.5 text-agent-accent" />
+                    {t('label_model')}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleFetchModels}
+                    disabled={isFetchingModels || !form.apiKey}
+                    className="text-[11px] text-agent-accent hover:underline flex items-center gap-1 disabled:opacity-40"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isFetchingModels ? 'animate-spin' : ''}`} />
+                    <span>{isFetchingModels ? t('fetching_models') : t('fetch_models')}</span>
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                  placeholder="e.g. gpt-4o, deepseek-chat, openai/gpt-4o-mini"
+                  className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono mb-2"
+                />
+
+                {/* Error message */}
+                {modelsFetchError && (
+                  <div className="text-[11px] text-rose-500 bg-rose-500/10 p-2 rounded border border-rose-500/20 mb-2">
+                    {modelsFetchError}
+                  </div>
+                )}
+
+                {/* Fetched Models List with Search */}
+                {fetchedModels.length > 0 && (
+                  <div className="border border-agent-border rounded-lg bg-agent-card p-2 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-agent-muted">
+                      <span>{t('models_found', { count: fetchedModels.length })}</span>
+                      <div className="relative w-36">
+                        <Search className="w-3 h-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-agent-muted" />
+                        <input
+                          type="text"
+                          value={modelSearch}
+                          onChange={(e) => setModelSearch(e.target.value)}
+                          placeholder={t('search_model_placeholder')}
+                          className="w-full bg-agent-surface border border-agent-border rounded px-2 py-0.5 pl-5 text-[10px] text-agent-text outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-36 overflow-y-auto space-y-0.5">
+                      {filteredModels.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setForm({ ...form, model: m })}
+                          className={`w-full text-left px-2 py-1 rounded text-[11px] font-mono transition-colors truncate ${
+                            form.model === m
+                              ? 'bg-agent-accent text-white'
+                              : 'hover:bg-agent-surface text-agent-text'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Popular Presets */}
+                {fetchedModels.length === 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {PROVIDER_PRESETS[form.provider].popularModels.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setForm({ ...form, model: m })}
+                        className={`text-[10px] px-2 py-0.5 rounded border font-mono transition-colors ${
+                          form.model === m
+                            ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
+                            : 'bg-agent-card border-agent-border text-agent-muted hover:text-agent-text'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* DevTools Auto-Attach Toggle */}
-          <div className="flex items-center justify-between pt-2 border-t border-[#303030]">
-            <div>
-              <div className="text-xs font-medium text-[#ececec]">Авто-подключение CDP DevTools</div>
-              <div className="text-[11px] text-[#888]">Автоматически подключать отладчик при командах агента</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={form.autoAttachDebugger}
-              onChange={(e) => setForm({ ...form, autoAttachDebugger: e.target.checked })}
-              className="w-4 h-4 accent-[#10a37f] rounded cursor-pointer"
-            />
-          </div>
+          {/* TAB 2: Context & Memory */}
+          {activeTab === 'context' && (
+            <div className="space-y-3.5">
+              <div>
+                <label className="block font-medium text-agent-text mb-1">
+                  {t('label_max_history')}
+                </label>
+                <input
+                  type="number"
+                  min="2"
+                  max="50"
+                  value={form.maxHistoryMessages}
+                  onChange={(e) =>
+                    setForm({ ...form, maxHistoryMessages: parseInt(e.target.value) || 10 })
+                  }
+                  className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono"
+                />
+              </div>
 
-          {/* System Instructions */}
-          <div>
-            <label className="block text-xs font-medium text-[#ccc] mb-1">Системный промпт</label>
-            <textarea
-              rows={3}
-              value={form.systemPrompt || ''}
-              onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
-              className="w-full bg-[#2a2a2a] border border-[#383838] focus:border-[#10a37f] rounded-lg p-2 text-[11px] text-[#ececec] outline-none resize-none leading-relaxed"
-            />
-          </div>
+              <div>
+                <label className="block font-medium text-agent-text mb-1">
+                  {t('label_max_tokens')}
+                </label>
+                <input
+                  type="number"
+                  step="1024"
+                  min="2048"
+                  max="128000"
+                  value={form.maxContextTokens}
+                  onChange={(e) =>
+                    setForm({ ...form, maxContextTokens: parseInt(e.target.value) || 8192 })
+                  }
+                  className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-agent-text mb-1">
+                  {t('label_compression_threshold')}
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="95"
+                  value={form.compressionThreshold}
+                  onChange={(e) =>
+                    setForm({ ...form, compressionThreshold: parseInt(e.target.value) || 80 })
+                  }
+                  className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: General */}
+          {activeTab === 'general' && (
+            <div className="space-y-3.5">
+              {/* Theme Selector */}
+              <div>
+                <label className="block font-medium text-agent-text mb-1.5">
+                  {t('label_theme')}
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['system', 'dark', 'light'] as AppTheme[]).map((themeMode) => (
+                    <button
+                      key={themeMode}
+                      type="button"
+                      onClick={() => setForm({ ...form, theme: themeMode })}
+                      className={`p-2 rounded-lg border flex items-center justify-center gap-1.5 transition-colors font-medium capitalize ${
+                        form.theme === themeMode
+                          ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
+                          : 'bg-agent-card border-agent-border text-agent-muted hover:text-agent-text'
+                      }`}
+                    >
+                      {themeMode === 'system' && <Laptop className="w-3.5 h-3.5" />}
+                      {themeMode === 'dark' && <Moon className="w-3.5 h-3.5" />}
+                      {themeMode === 'light' && <Sun className="w-3.5 h-3.5" />}
+                      <span>{t(`theme_${themeMode}`)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Language Selector */}
+              <div>
+                <label className="block font-medium text-agent-text mb-1.5">
+                  {t('label_language')}
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'auto', label: 'Авто' },
+                    { id: 'ru', label: 'Русский' },
+                    { id: 'en', label: 'English' },
+                  ].map((lang) => (
+                    <button
+                      key={lang.id}
+                      type="button"
+                      onClick={() => setForm({ ...form, language: lang.id as AppLang })}
+                      className={`p-2 rounded-lg border text-center transition-colors font-medium ${
+                        form.language === lang.id
+                          ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
+                          : 'bg-agent-card border-agent-border text-agent-muted hover:text-agent-text'
+                      }`}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Save Sessions Toggle */}
+              <div className="flex items-center justify-between pt-2 border-t border-agent-border">
+                <div>
+                  <div className="font-medium text-agent-text">{t('label_save_sessions')}</div>
+                  <div className="text-[11px] text-agent-muted">{t('label_save_sessions_desc')}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.saveSessionHistory}
+                  onChange={(e) => setForm({ ...form, saveSessionHistory: e.target.checked })}
+                  className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                />
+              </div>
+
+              {/* Auto Attach CDP Toggle */}
+              <div className="flex items-center justify-between pt-2 border-t border-agent-border">
+                <div>
+                  <div className="font-medium text-agent-text">{t('label_auto_attach_cdp')}</div>
+                  <div className="text-[11px] text-agent-muted">{t('label_auto_attach_cdp_desc')}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.autoAttachDebugger}
+                  onChange={(e) => setForm({ ...form, autoAttachDebugger: e.target.checked })}
+                  className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                />
+              </div>
+
+              {/* System Prompt */}
+              <div>
+                <label className="block font-medium text-agent-text mb-1">
+                  {t('label_system_prompt')}
+                </label>
+                <textarea
+                  rows={3}
+                  value={form.systemPrompt || ''}
+                  onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
+                  className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg p-2 text-[11px] text-agent-text outline-none resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Hotkeys */}
+          {activeTab === 'hotkey' && (
+            <div className="space-y-3.5">
+              <div>
+                <label className="block font-medium text-agent-text mb-1">
+                  {t('label_hotkey')}
+                </label>
+                <div className="p-3 rounded-lg bg-agent-card border border-agent-border flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Keyboard className="w-4 h-4 text-agent-accent" />
+                    <span className="font-mono text-xs text-agent-text font-semibold">
+                      {form.customHotkey || 'Alt+C'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-agent-muted">Глобальный шорткат</span>
+                </div>
+                <p className="text-[11px] text-agent-muted mt-2">
+                  {t('hotkey_hint')}
+                </p>
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={handleOpenBrowserShortcuts}
+                  className="py-2 px-3 rounded-lg bg-agent-card hover:bg-agent-border border border-agent-border text-agent-accent font-medium text-xs flex items-center gap-2 transition-colors"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>{t('open_browser_shortcuts')}</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-[#383838] bg-[#171717] flex justify-end gap-2">
+        <div className="px-4 py-3 border-t border-agent-border bg-agent-card flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-xs text-[#ccc] hover:bg-[#2a2a2a] transition-colors"
+            className="px-3 py-1.5 rounded-lg text-agent-muted hover:text-agent-text hover:bg-agent-surface transition-colors"
           >
-            Отмена
+            {t('btn_cancel')}
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="px-4 py-1.5 rounded-lg text-xs bg-[#10a37f] hover:bg-[#0e8e6e] text-white font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-4 py-1.5 rounded-lg bg-agent-accent hover:opacity-90 text-white font-medium transition-colors flex items-center gap-1.5 shadow-sm"
           >
             {savedSuccess ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-            <span>{savedSuccess ? 'Сохранено!' : 'Сохранить'}</span>
+            <span>{savedSuccess ? t('saved_success') : t('btn_save')}</span>
           </button>
         </div>
       </div>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<translations>
+  <!-- Header -->
+  <app_title>Chromium Agent</app_title>
+  <cdp_connected>CDP connected</cdp_connected>
+  <cdp_disconnected>CDP disconnected</cdp_disconnected>
+  <clear_chat>Clear current chat</clear_chat>
+  <chat_history>Session history</chat_history>
+  <settings>Settings</settings>
+  <theme_light>Light</theme_light>
+  <theme_dark>Dark</theme_dark>
+  <theme_system>System</theme_system>
+  <new_chat>New chat</new_chat>
+
+  <!-- Model & Provider -->
+  <no_model_selected>No model selected</no_model_selected>
+  <provider_routerai>RouterAI (Russia)</provider_routerai>
+  <provider_aitunnel>AItunnel (Russia)</provider_aitunnel>
+  <provider_openai>OpenAI</provider_openai>
+  <provider_deepseek>DeepSeek</provider_deepseek>
+  <provider_gemini>Google Gemini</provider_gemini>
+  <provider_anthropic>Anthropic Claude</provider_anthropic>
+  <provider_custom>Custom (OpenRouter / Groq / Ollama)</provider_custom>
+  <fetch_models>Fetch models list</fetch_models>
+  <fetching_models>Loading models...</fetching_models>
+  <models_found>Models found (text-only): {count}</models_found>
+  <fetch_models_error>Failed to load models. Check your API key and URL.</fetch_models_error>
+  <search_model_placeholder>Search model...</search_model_placeholder>
+
+  <!-- Message & Input -->
+  <input_placeholder>Type a message...</input_placeholder>
+  <send_message>Send message</send_message>
+  <stop_generation>Stop generation</stop_generation>
+  <copy_message>Copy</copy_message>
+  <copied>Copied</copied>
+  <rollback_message>Rollback chat to this message</rollback_message>
+  <welcome_title>How can I help?</welcome_title>
+  <welcome_subtitle>Ask a question or assign a task on the browser page.</welcome_subtitle>
+
+  <!-- Unconfigured Prompt -->
+  <not_configured_title>Provider setup required</not_configured_title>
+  <not_configured_desc>To start chatting, select a provider (RouterAI, AItunnel, DeepSeek, OpenAI, etc.), enter your API key, and select a model.</not_configured_desc>
+  <open_settings>Open settings</open_settings>
+
+  <!-- Context & Token Gauge -->
+  <context_usage>Chat context</context_usage>
+  <context_messages>Messages: {count}</context_messages>
+  <context_tokens>Tokens: ~{used} / {max} ({percent}%)</context_tokens>
+  <context_compression_status>Compression: {status}</context_compression_status>
+  <compression_active>active</compression_active>
+  <compression_idle>normal</compression_idle>
+
+  <!-- History & Sessions -->
+  <sessions_title>Chat History</sessions_title>
+  <no_sessions>No previous sessions</no_sessions>
+  <delete_session>Delete session</delete_session>
+  <confirm_delete_session>Delete this session?</confirm_delete_session>
+  <confirm_clear_chat>Clear current chat messages?</confirm_clear_chat>
+  <messages_count>messages: {count}</messages_count>
+
+  <!-- Settings Modal -->
+  <settings_title>Chromium Agent Settings</settings_title>
+  <tab_general>General</tab_general>
+  <tab_models>Provider &amp; Models</tab_models>
+  <tab_context>Context &amp; Memory</tab_context>
+  <tab_hotkey>Hotkeys</tab_hotkey>
+
+  <label_theme>Appearance Theme</label_theme>
+  <label_language>Language</label_language>
+  <label_save_sessions>Save session history</label_save_sessions>
+  <label_save_sessions_desc>Previous sessions remain saved in history</label_save_sessions_desc>
+  <label_auto_attach_cdp>Auto-attach DevTools (CDP)</label_auto_attach_cdp>
+  <label_auto_attach_cdp_desc>Connect debugger when browser automation tasks run</label_auto_attach_cdp_desc>
+
+  <label_api_key>API Key</label_api_key>
+  <api_key_stored_locally>Stored locally in extension storage</api_key_stored_locally>
+  <label_base_url>API Base URL</label_base_url>
+  <label_model>Model</label_model>
+  <label_system_prompt>System instructions</label_system_prompt>
+
+  <label_max_history>Max history messages in context</label_max_history>
+  <label_max_tokens>Max context window size (tokens)</label_max_tokens>
+  <label_compression_threshold>Context compression threshold (%)</label_compression_threshold>
+
+  <label_hotkey>Side panel trigger hotkey</label_hotkey>
+  <hotkey_hint>Default is Alt+C. You can customize keyboard shortcuts in browser settings:</hotkey_hint>
+  <open_browser_shortcuts>Configure shortcuts in browser</open_browser_shortcuts>
+
+  <btn_cancel>Cancel</btn_cancel>
+  <btn_save>Save</btn_save>
+  <saved_success>Saved</saved_success>
+
+  <!-- Floating Widget -->
+  <widget_tooltip>Chromium Agent (Alt+C)</widget_tooltip>
+  <widget_drop_close>CLOSE</widget_drop_close>
+</translations>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<translations>
+  <!-- Header -->
+  <app_title>Chromium Agent</app_title>
+  <cdp_connected>CDP подключен</cdp_connected>
+  <cdp_disconnected>CDP отключен</cdp_disconnected>
+  <clear_chat>Очистить текущий диалог</clear_chat>
+  <chat_history>История сессий</chat_history>
+  <settings>Настройки</settings>
+  <theme_light>Светлая</theme_light>
+  <theme_dark>Тёмная</theme_dark>
+  <theme_system>Системная</theme_system>
+  <new_chat>Новый чат</new_chat>
+
+  <!-- Model & Provider -->
+  <no_model_selected>Модель не выбрана</no_model_selected>
+  <provider_routerai>RouterAI (Россия)</provider_routerai>
+  <provider_aitunnel>AItunnel (Россия)</provider_aitunnel>
+  <provider_openai>OpenAI</provider_openai>
+  <provider_deepseek>DeepSeek</provider_deepseek>
+  <provider_gemini>Google Gemini</provider_gemini>
+  <provider_anthropic>Anthropic Claude</provider_anthropic>
+  <provider_custom>Пользовательский (OpenRouter / Groq / Ollama)</provider_custom>
+  <fetch_models>Загрузить список моделей</fetch_models>
+  <fetching_models>Загрузка моделей...</fetching_models>
+  <models_found>Найдено моделей (только текст): {count}</models_found>
+  <fetch_models_error>Не удалось загрузить модели. Проверьте ключ и URL.</fetch_models_error>
+  <search_model_placeholder>Поиск модели...</search_model_placeholder>
+
+  <!-- Message & Input -->
+  <input_placeholder>Введите сообщение...</input_placeholder>
+  <send_message>Отправить сообщение</send_message>
+  <stop_generation>Остановить генерацию</stop_generation>
+  <copy_message>Копировать</copy_message>
+  <copied>Скопировано</copied>
+  <rollback_message>Откатить диалог до этого сообщения</rollback_message>
+  <welcome_title>Чем помочь?</welcome_title>
+  <welcome_subtitle>Задайте вопрос или дайте задачу по странице браузера.</welcome_subtitle>
+
+  <!-- Unconfigured Prompt -->
+  <not_configured_title>Требуется настройка провайдера</not_configured_title>
+  <not_configured_desc>Чтобы отправлять запросы, выберите провайдера (RouterAI, AItunnel, DeepSeek, OpenAI и др.), укажите API-ключ и выберите модель.</not_configured_desc>
+  <open_settings>Открыть настройки</open_settings>
+
+  <!-- Context & Token Gauge -->
+  <context_usage>Контекст диалога</context_usage>
+  <context_messages>Сообщений: {count}</context_messages>
+  <context_tokens>Токенов: ~{used} / {max} ({percent}%)</context_tokens>
+  <context_compression_status>Сжатие: {status}</context_compression_status>
+  <compression_active>активно</compression_active>
+  <compression_idle>норма</compression_idle>
+
+  <!-- History & Sessions -->
+  <sessions_title>История диалогов</sessions_title>
+  <no_sessions>История пуста</no_sessions>
+  <delete_session>Удалить сессию</delete_session>
+  <confirm_delete_session>Удалить эту сессию?</confirm_delete_session>
+  <confirm_clear_chat>Очистить сообщения текущего чата?</confirm_clear_chat>
+  <messages_count>сообщений: {count}</messages_count>
+
+  <!-- Settings Modal -->
+  <settings_title>Настройки Chromium Agent</settings_title>
+  <tab_general>Основные</tab_general>
+  <tab_models>Провайдер и модели</tab_models>
+  <tab_context>Контекст и память</tab_context>
+  <tab_hotkey>Горячие клавиши</tab_hotkey>
+
+  <label_theme>Тема оформления</label_theme>
+  <label_language>Язык интерфейса</label_language>
+  <label_save_sessions>Сохранять историю сессий</label_save_sessions>
+  <label_save_sessions_desc>Предыдущие диалоги сохраняются в истории</label_save_sessions_desc>
+  <label_auto_attach_cdp>Автоподключение DevTools (CDP)</label_auto_attach_cdp>
+  <label_auto_attach_cdp_desc>Подключать отладчик при задачах управления браузером</label_auto_attach_cdp_desc>
+
+  <label_api_key>API-ключ</label_api_key>
+  <api_key_stored_locally>Хранится локально в расширении</api_key_stored_locally>
+  <label_base_url>Base URL API</label_base_url>
+  <label_model>Модель</label_model>
+  <label_system_prompt>Системные инструкции</label_system_prompt>
+
+  <label_max_history>Количество последних сообщений в контексте</label_max_history>
+  <label_max_tokens>Максимальный размер контекста (токенов)</label_max_tokens>
+  <label_compression_threshold>Порог сжатия контекста (%)</label_compression_threshold>
+
+  <label_hotkey>Горячая клавиша открытия панели</label_hotkey>
+  <hotkey_hint>По умолчанию используется Alt+C. Вы можете изменить шорткат в настройках браузера:</hotkey_hint>
+  <open_browser_shortcuts>Настроить горячие клавиши в браузере</open_browser_shortcuts>
+
+  <btn_cancel>Отмена</btn_cancel>
+  <btn_save>Сохранить</btn_save>
+  <saved_success>Сохранено</saved_success>
+
+  <!-- Floating Widget -->
+  <widget_tooltip>Chromium Agent (Alt+C)</widget_tooltip>
+  <widget_drop_close>ЗАКРЫТЬ</widget_drop_close>
+</translations>

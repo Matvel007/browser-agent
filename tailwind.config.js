@@ -9,15 +9,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        chatgpt: {
-          sidebar: '#171717',
-          main: '#212121',
-          card: '#2f2f2f',
-          hover: '#2a2a2a',
-          border: '#383838',
-          input: '#303030',
-          text: '#ececec',
-          muted: '#b4b4b4'
+        agent: {
+          bg: 'var(--agent-bg)',
+          surface: 'var(--agent-surface)',
+          card: 'var(--agent-card)',
+          border: 'var(--agent-border)',
+          text: 'var(--agent-text)',
+          muted: 'var(--agent-muted)',
+          accent: 'var(--agent-accent)',
+          accentHover: 'var(--agent-accent-hover)',
         }
       }
     },

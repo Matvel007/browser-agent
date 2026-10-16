@@ -65,6 +65,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (action === 'OPEN_SHORTCUTS_SETTINGS') {
+    const shortcutUrl = navigator.userAgent.includes('YaBrowser')
+      ? 'browser://extensions/shortcuts'
+      : 'chrome://extensions/shortcuts';
+    chrome.tabs.create({ url: shortcutUrl }).catch(() => {
+      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(console.warn);
+    });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (action === 'GET_ACTIVE_TAB') {
     chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
       const activeTab = tabs[0];

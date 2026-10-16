@@ -2,40 +2,62 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { MessageList } from './components/MessageList';
 import { MessageInput } from './components/MessageInput';
+import { ModelSelectorBar } from './components/ModelSelectorBar';
 import { SettingsModal } from './components/SettingsModal';
+import { SessionsDrawer } from './components/SessionsDrawer';
 import {
   ActiveTabInfo,
   AppSettings,
   ChatMessage,
+  ChatSession,
   ToolCallRecord,
 } from '../types';
 import {
   DEFAULT_SETTINGS,
   getSettings,
   saveSettings,
-  getChatHistory,
-  saveChatHistory,
-  clearChatHistory,
+  getChatSessions,
+  saveSingleSession,
+  deleteChatSession,
 } from '../services/storage';
-import { LLMClient } from '../services/llm';
+import { LLMClient, estimateHistoryTokens } from '../services/llm';
+import { i18n, t } from '../services/i18n';
 
 export const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'general' | 'models' | 'context' | 'hotkey'>('models');
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  // Sessions and messages
+  const [currentSessionId, setCurrentSessionId] = useState<string>(`sess_${Date.now()}`);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+
+  // Rollback text input state
+  const [restoredInputText, setRestoredInputText] = useState<string>('');
+
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [, setI18nVersion] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Load initial settings and history
+  // Subscribe to i18n changes
+  useEffect(() => {
+    return i18n.subscribe(() => setI18nVersion((v) => v + 1));
+  }, []);
+
+  // Initialize Settings, i18n, Theme, and Sessions
   useEffect(() => {
     getSettings().then((s) => {
       setSettings(s);
+      i18n.init(s.language);
+      applyTheme(s.theme);
     });
 
-    getChatHistory().then((h) => {
-      if (h && h.length > 0) setMessages(h);
+    getChatSessions().then((loadedSessions) => {
+      setSessions(loadedSessions);
     });
 
     fetchActiveTab();
@@ -52,12 +74,38 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Update storage whenever messages change (debounce)
-  useEffect(() => {
-    if (messages.length > 0) {
-      saveChatHistory(messages);
+  // Apply Theme to document root
+  const applyTheme = (theme: 'system' | 'dark' | 'light') => {
+    const isDark =
+      theme === 'dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
-  }, [messages]);
+  };
+
+  // Save current session automatically when messages change
+  useEffect(() => {
+    if (settings.saveSessionHistory && messages.length > 0) {
+      const firstUserMsg = messages.find((m) => m.role === 'user');
+      const title = firstUserMsg ? firstUserMsg.content.slice(0, 36) : 'Диалог';
+
+      const sessionObj: ChatSession = {
+        id: currentSessionId,
+        title,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages,
+      };
+
+      saveSingleSession(sessionObj).then(() => {
+        getChatSessions().then(setSessions);
+      });
+    }
+  }, [messages, currentSessionId, settings.saveSessionHistory]);
 
   const fetchActiveTab = () => {
     if (typeof chrome === 'undefined' || !chrome.runtime) return;
@@ -82,13 +130,39 @@ export const App: React.FC = () => {
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
     saveSettings(newSettings);
+    applyTheme(newSettings.theme);
+  };
+
+  const handleNewChat = () => {
+    setCurrentSessionId(`sess_${Date.now()}`);
+    setMessages([]);
+  };
+
+  const handleSelectSession = (sess: ChatSession) => {
+    setCurrentSessionId(sess.id);
+    setMessages(sess.messages || []);
+  };
+
+  const handleDeleteSession = async (sessId: string) => {
+    await deleteChatSession(sessId);
+    const updated = await getChatSessions();
+    setSessions(updated);
+    if (sessId === currentSessionId) {
+      handleNewChat();
+    }
   };
 
   const handleClearChat = () => {
-    if (window.confirm('Очистить всю историю диалога?')) {
+    if (window.confirm(t('confirm_clear_chat'))) {
       setMessages([]);
-      clearChatHistory();
     }
+  };
+
+  const handleRollback = (index: number, content: string) => {
+    // Put message text back into input
+    setRestoredInputText(content);
+    // Slice history to before this message
+    setMessages((prev) => prev.slice(0, index));
   };
 
   const handleStop = () => {
@@ -112,7 +186,7 @@ export const App: React.FC = () => {
       const notConfiguredMsg: ChatMessage = {
         id: `ast_${Date.now() + 1}`,
         role: 'assistant',
-        content: `👋 **Пожалуйста, настройте ИИ-провайдер и выберите модель**\n\nЧтобы я мог отвечать на вопросы и управлять браузером через Chrome DevTools, необходимо подключить ИИ:\n\n1. Перейдите в **⚙️ Настройки** (кнопка вверху справа или кнопка ниже).\n2. Выберите подходящего провайдера (**OpenAI**, **DeepSeek**, **Google Gemini**, **Anthropic** или **Custom**).\n3. Вставьте ваш **API-ключ** и укажите желаемую модель.`,
+        content: `**${t('not_configured_title')}**\n\n${t('not_configured_desc')}`,
         timestamp: Date.now() + 1,
       };
 
@@ -150,10 +224,7 @@ export const App: React.FC = () => {
     signal: AbortSignal,
     stepCount: number
   ): Promise<void> => {
-    if (stepCount > 8) {
-      // Safety limit for maximum tool iterations
-      return;
-    }
+    if (stepCount > 8) return;
 
     const assistantMsgId = `ast_${Date.now()}`;
     const initialAssistantMsg: ChatMessage = {
@@ -181,7 +252,6 @@ export const App: React.FC = () => {
       signal
     );
 
-    // Update with final response chunk and any parsed tool calls
     const completedMsg: ChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -201,7 +271,6 @@ export const App: React.FC = () => {
       for (const tc of result.toolCalls) {
         if (signal.aborted) break;
 
-        // Mark tool as running
         tc.status = 'running';
         setMessages((prev) =>
           prev.map((m) =>
@@ -214,7 +283,6 @@ export const App: React.FC = () => {
           )
         );
 
-        // Optional visual highlight via content script if selector exists
         if (tc.args?.selector && activeTab?.id) {
           chrome.tabs.sendMessage(activeTab.id, {
             action: 'HIGHLIGHT_ELEMENT',
@@ -222,7 +290,6 @@ export const App: React.FC = () => {
           }).catch(() => {});
         }
 
-        // Execute DevTools action via background worker
         try {
           const toolRes = await executeDevToolsAction(tc.name, tc.args);
           tc.status = 'success';
@@ -234,7 +301,6 @@ export const App: React.FC = () => {
 
         executedToolCalls.push(tc);
 
-        // Update UI with tool result
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
@@ -247,7 +313,6 @@ export const App: React.FC = () => {
         );
       }
 
-      // If there are tool results and we haven't aborted, continue ReAct loop!
       if (!signal.aborted) {
         const nextHistory = updatedHistory.map((m) =>
           m.id === assistantMsgId ? { ...m, toolCalls: executedToolCalls } : m
@@ -277,7 +342,6 @@ export const App: React.FC = () => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
           } else if (res?.success) {
-            // Update activeTab status if attachment state changed
             fetchActiveTab();
             resolve(res.result);
           } else {
@@ -288,38 +352,72 @@ export const App: React.FC = () => {
     });
   };
 
+  const usedTokens = estimateHistoryTokens(messages, settings.systemPrompt);
+
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#212121] text-[#ececec] overflow-hidden select-text">
-      {/* Native Top Header */}
+    <div className="flex flex-col h-screen w-screen bg-agent-bg text-agent-text overflow-hidden select-text">
+      {/* Top Header */}
       <Header
-        settings={settings}
         activeTab={activeTab}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsTab('general');
+          setIsSettingsOpen(true);
+        }}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        onNewChat={handleNewChat}
         onClearChat={handleClearChat}
         onToggleAttachDebugger={handleToggleAttachDebugger}
-        onRefreshTab={fetchActiveTab}
       />
 
-      {/* ChatGPT Message List */}
+      {/* Messages List */}
       <MessageList
         messages={messages}
         isGenerating={isGenerating}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsTab('models');
+          setIsSettingsOpen(true);
+        }}
+        onRollback={handleRollback}
       />
 
-      {/* Message Input & Quick Action Chips */}
+      {/* Message Input Container */}
       <MessageInput
         onSendMessage={handleSendMessage}
         onStop={handleStop}
         isGenerating={isGenerating}
+        initialText={restoredInputText}
+        onTextConsumed={() => setRestoredInputText('')}
+      />
+
+      {/* OpenCode-style Model Selector Bar with Context Gauge */}
+      <ModelSelectorBar
+        settings={settings}
+        onOpenModelSettings={() => {
+          setSettingsTab('models');
+          setIsSettingsOpen(true);
+        }}
+        usedTokens={usedTokens}
+        messageCount={messages.length}
       />
 
       {/* Settings Modal */}
       <SettingsModal
         settings={settings}
         isOpen={isSettingsOpen}
+        initialTab={settingsTab}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
+      />
+
+      {/* Sessions History Drawer */}
+      <SessionsDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+        onDeleteSession={handleDeleteSession}
       />
     </div>
   );

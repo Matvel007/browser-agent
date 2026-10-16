@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Chromium Agent",
   "version": "1.0.0",
-  "description": "ChatGPT-style AI Agent for Chromium browsers with DevTools Protocol automation",
+  "description": "Autonomous AI assistant for Chromium browsers with Chrome DevTools Protocol automation",
   "permissions": [
     "sidePanel",
     "debugger",
@@ -45,5 +45,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["locales/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
