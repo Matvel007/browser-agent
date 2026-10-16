@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: 'auto',
   saveSessionHistory: true,
   maxHistoryMessages: 15,
-  maxContextTokens: 8192,
+  maxContextTokens: 252000,
   compressionThreshold: 80,
   customHotkey: 'Alt+C',
 };

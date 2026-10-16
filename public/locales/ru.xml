@@ -13,7 +13,7 @@
   <new_chat>Новый чат</new_chat>
 
   <!-- Model & Provider -->
-  <no_model_selected>Модель не выбрана</no_model_selected>
+  <no_model_selected>Нет модели</no_model_selected>
   <provider_routerai>RouterAI (Россия)</provider_routerai>
   <provider_aitunnel>AItunnel (Россия)</provider_aitunnel>
   <provider_openai>OpenAI</provider_openai>
@@ -24,7 +24,7 @@
   <fetch_models>Загрузить список моделей</fetch_models>
   <fetching_models>Загрузка моделей...</fetching_models>
   <models_found>Найдено моделей (только текст): {count}</models_found>
-  <fetch_models_error>Не удалось загрузить модели. Проверьте ключ и URL.</fetch_models_error>
+  <fetch_models_error>Не удалось загрузить модели. Проверьте адрес API.</fetch_models_error>
   <search_model_placeholder>Поиск модели...</search_model_placeholder>
 
   <!-- Message & Input -->
@@ -33,7 +33,7 @@
   <stop_generation>Остановить генерацию</stop_generation>
   <copy_message>Копировать</copy_message>
   <copied>Скопировано</copied>
-  <rollback_message>Откатить диалог до этого сообщения</rollback_message>
+  <rollback_message>Откатить</rollback_message>
   <welcome_title>Чем помочь?</welcome_title>
   <welcome_subtitle>Задайте вопрос или дайте задачу по странице браузера.</welcome_subtitle>
 

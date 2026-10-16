@@ -50,111 +50,132 @@ export const MessageList: React.FC<MessageListProps> = ({
         messages.map((message, index) => {
           const isUser = message.role === 'user';
 
+          if (isUser) {
+            return (
+              <div
+                key={message.id}
+                className="flex gap-2 text-sm leading-relaxed justify-end group"
+              >
+                <div className="flex flex-col items-end max-w-[82%]">
+                  {/* Bubble card */}
+                  <div className="rounded-xl px-3.5 py-2 border bg-agent-card border-agent-border text-agent-text rounded-tr-sm text-xs whitespace-pre-wrap break-words shadow-sm">
+                    {message.content}
+                  </div>
+
+                  {/* Actions UNDER the bubble */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1 flex items-center gap-2.5 text-[11px] text-agent-muted px-1 select-none">
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(message.content, message.id)}
+                      title={t('copy_message')}
+                      className="hover:text-agent-text rounded flex items-center gap-1 transition-colors"
+                    >
+                      {copiedId === message.id ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-500" />
+                          <span className="text-emerald-500">{t('copied')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>{t('copy_message')}</span>
+                        </>
+                      )}
+                    </button>
+
+                    {onRollback && (
+                      <button
+                        type="button"
+                        onClick={() => onRollback(index, message.content)}
+                        title={t('rollback_message')}
+                        className="hover:text-agent-accent rounded flex items-center gap-1 transition-colors"
+                      >
+                        <Undo2 className="w-3 h-3" />
+                        <span>{t('rollback_message')}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* User Avatar */}
+                <div className="w-6 h-6 rounded-md bg-agent-surface border border-agent-border flex items-center justify-center text-agent-muted flex-shrink-0 mt-0.5">
+                  <User className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={message.id}
-              className={`flex gap-2.5 text-sm leading-relaxed ${
-                isUser ? 'justify-end' : 'justify-start'
-              }`}
+              className="flex gap-2.5 text-sm leading-relaxed justify-start group"
             >
               {/* Bot Avatar */}
-              {!isUser && (
-                <div className="w-6 h-6 rounded-md bg-agent-card border border-agent-border flex items-center justify-center text-agent-accent flex-shrink-0 mt-0.5 shadow-sm">
-                  <Bot className="w-3.5 h-3.5" />
-                </div>
-              )}
+              <div className="w-6 h-6 rounded-md bg-agent-card border border-agent-border flex items-center justify-center text-agent-accent flex-shrink-0 mt-0.5 shadow-sm">
+                <Bot className="w-3.5 h-3.5" />
+              </div>
 
-              {/* Message Bubble Container */}
-              <div
-                className={`group relative max-w-[88%] rounded-xl px-3.5 py-2.5 border ${
-                  isUser
-                    ? 'bg-agent-card border-agent-border text-agent-text rounded-tr-sm'
-                    : 'bg-transparent border-transparent text-agent-text -ml-1 flex-1'
-                }`}
-              >
+              <div className="flex-1 flex flex-col items-start max-w-[90%] -ml-1">
                 {/* Tool calls rendered as step cards */}
                 {message.toolCalls && message.toolCalls.length > 0 && (
-                  <div className="mb-2">
+                  <div className="mb-2 w-full">
                     {message.toolCalls.map((tc) => (
                       <ToolStepCard key={tc.id} toolCall={tc} />
                     ))}
                   </div>
                 )}
 
-                {/* Markdown text or User text */}
-                {isUser ? (
-                  <div className="whitespace-pre-wrap text-xs text-agent-text">{message.content}</div>
-                ) : (
-                  <div className="prose-agent text-xs break-words">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {message.content}
-                    </ReactMarkdown>
+                {/* Markdown text */}
+                <div className="prose-agent text-xs break-words text-agent-text w-full">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.content}
+                  </ReactMarkdown>
 
-                    {/* Blinking cursor while streaming */}
-                    {message.isStreaming && (
-                      <span className="inline-block w-1.5 h-3.5 bg-agent-accent animate-pulse ml-0.5 align-middle" />
+                  {/* Blinking cursor while streaming */}
+                  {message.isStreaming && (
+                    <span className="inline-block w-1.5 h-3.5 bg-agent-accent animate-pulse ml-0.5 align-middle" />
+                  )}
+
+                  {/* Open Settings button if message prompts to configure */}
+                  {(message.content.includes('Настройки') || message.content.includes('Settings')) &&
+                    onOpenSettings && (
+                      <div className="mt-2.5">
+                        <button
+                          type="button"
+                          onClick={onOpenSettings}
+                          className="px-3 py-1.5 rounded-md bg-agent-card hover:bg-agent-border border border-agent-border text-agent-text text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm"
+                        >
+                          <Settings className="w-3.5 h-3.5 text-agent-accent" />
+                          <span>{t('open_settings')}</span>
+                        </button>
+                      </div>
                     )}
+                </div>
 
-                    {/* Open Settings button if message prompts to configure */}
-                    {(message.content.includes('Настройки') || message.content.includes('Settings')) &&
-                      onOpenSettings && (
-                        <div className="mt-2.5">
-                          <button
-                            type="button"
-                            onClick={onOpenSettings}
-                            className="px-3 py-1.5 rounded-md bg-agent-card hover:bg-agent-border border border-agent-border text-agent-text text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm"
-                          >
-                            <Settings className="w-3.5 h-3.5 text-agent-accent" />
-                            <span>{t('open_settings')}</span>
-                          </button>
-                        </div>
-                      )}
-                  </div>
-                )}
-
-                {/* Action buttons (Copy & Rollback for User, Copy for Assistant) */}
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1 flex items-center gap-2 text-[11px] text-agent-muted">
-                  {/* Copy button */}
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(message.content, message.id)}
-                    title={t('copy_message')}
-                    className="hover:text-agent-text rounded flex items-center gap-1"
-                  >
-                    {copiedId === message.id ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-500" />
-                        <span className="text-emerald-500">{t('copied')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3" />
-                        <span>{t('copy_message')}</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* Rollback button on user message (OpenCode style) */}
-                  {isUser && onRollback && (
+                {/* Actions UNDER the assistant message */}
+                {message.content && !message.isStreaming && (
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1 flex items-center gap-2 text-[11px] text-agent-muted select-none">
                     <button
                       type="button"
-                      onClick={() => onRollback(index, message.content)}
-                      title={t('rollback_message')}
-                      className="hover:text-agent-accent rounded flex items-center gap-1"
+                      onClick={() => handleCopy(message.content, message.id)}
+                      title={t('copy_message')}
+                      className="hover:text-agent-text rounded flex items-center gap-1 transition-colors"
                     >
-                      <Undo2 className="w-3 h-3" />
-                      <span>{t('rollback_message')}</span>
+                      {copiedId === message.id ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-500" />
+                          <span className="text-emerald-500">{t('copied')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>{t('copy_message')}</span>
+                        </>
+                      )}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-
-              {/* User Avatar */}
-              {isUser && (
-                <div className="w-6 h-6 rounded-md bg-agent-surface border border-agent-border flex items-center justify-center text-agent-muted flex-shrink-0 mt-0.5">
-                  <User className="w-3.5 h-3.5" />
-                </div>
-              )}
             </div>
           );
         })

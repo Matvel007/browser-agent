@@ -396,6 +396,10 @@ export const App: React.FC = () => {
           setSettingsTab('models');
           setIsSettingsOpen(true);
         }}
+        onSelectModel={(model: string) => {
+          const updated = { ...settings, model };
+          handleSaveSettings(updated);
+        }}
         usedTokens={usedTokens}
         messageCount={messages.length}
       />

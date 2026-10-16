@@ -33,7 +33,6 @@ interface ProviderPreset {
   labelKey: string;
   defaultModel: string;
   defaultBaseUrl?: string;
-  popularModels: string[];
 }
 
 const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
@@ -41,51 +40,34 @@ const PROVIDER_PRESETS: Record<ProviderType, ProviderPreset> = {
     labelKey: 'provider_routerai',
     defaultModel: 'openai/gpt-4o-mini',
     defaultBaseUrl: 'https://routerai.ru/api/v1',
-    popularModels: [
-      'openai/gpt-4o-mini',
-      'openai/gpt-4o',
-      'anthropic/claude-3.5-sonnet',
-      'deepseek/deepseek-chat',
-    ],
   },
   aitunnel: {
     labelKey: 'provider_aitunnel',
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: 'https://api.aitunnel.ru/v1',
-    popularModels: [
-      'gpt-4o-mini',
-      'gpt-4o',
-      'claude-3-5-sonnet-20241022',
-      'deepseek-chat',
-    ],
   },
   openai: {
     labelKey: 'provider_openai',
     defaultModel: 'gpt-4o',
     defaultBaseUrl: 'https://api.openai.com/v1',
-    popularModels: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo'],
   },
   deepseek: {
     labelKey: 'provider_deepseek',
     defaultModel: 'deepseek-chat',
     defaultBaseUrl: 'https://api.deepseek.com',
-    popularModels: ['deepseek-chat', 'deepseek-reasoner'],
   },
   gemini: {
     labelKey: 'provider_gemini',
     defaultModel: 'gemini-2.0-flash',
-    popularModels: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   },
   anthropic: {
     labelKey: 'provider_anthropic',
     defaultModel: 'claude-3-5-sonnet-20241022',
-    popularModels: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
   },
   custom: {
     labelKey: 'provider_custom',
     defaultModel: 'openrouter/auto',
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    popularModels: ['openrouter/auto', 'llama-3.3-70b-versatile', 'qwen-2.5-72b'],
   },
 };
 
@@ -142,11 +124,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const handleClose = () => {
+    // Revert theme and language to saved settings if not saved
+    if (form.theme !== settings.theme) {
+      const isDark =
+        settings.theme === 'dark' ||
+        (settings.theme === 'system' &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    if (form.language !== settings.language) {
+      i18n.init(settings.language);
+    }
+    onClose();
+  };
+
   const handleSave = () => {
     onSave(form);
-    if (form.language !== settings.language) {
-      i18n.init(form.language);
-    }
     setSavedSuccess(true);
     setTimeout(() => {
       setSavedSuccess(false);
@@ -173,7 +171,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 rounded-md text-agent-muted hover:text-agent-text hover:bg-agent-surface transition-colors"
           >
             <X className="w-4 h-4" />
@@ -315,7 +313,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={handleFetchModels}
-                    disabled={isFetchingModels || !form.apiKey}
+                    disabled={isFetchingModels}
                     className="text-[11px] text-agent-accent hover:underline flex items-center gap-1 disabled:opacity-40"
                   >
                     <RefreshCw className={`w-3 h-3 ${isFetchingModels ? 'animate-spin' : ''}`} />
@@ -373,26 +371,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
                 )}
-
-                {/* Popular Presets */}
-                {fetchedModels.length === 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {PROVIDER_PRESETS[form.provider].popularModels.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setForm({ ...form, model: m })}
-                        className={`text-[10px] px-2 py-0.5 rounded border font-mono transition-colors ${
-                          form.model === m
-                            ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
-                            : 'bg-agent-card border-agent-border text-agent-muted hover:text-agent-text'
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -422,12 +400,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </label>
                 <input
                   type="number"
-                  step="1024"
-                  min="2048"
-                  max="128000"
+                  step="1000"
+                  min="2000"
+                  max="1000000"
                   value={form.maxContextTokens}
                   onChange={(e) =>
-                    setForm({ ...form, maxContextTokens: parseInt(e.target.value) || 8192 })
+                    setForm({ ...form, maxContextTokens: parseInt(e.target.value) || 252000 })
                   }
                   className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono"
                 />
@@ -464,7 +442,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       key={themeMode}
                       type="button"
-                      onClick={() => setForm({ ...form, theme: themeMode })}
+                      onClick={() => {
+                        setForm((prev) => ({ ...prev, theme: themeMode }));
+                        const isDark =
+                          themeMode === 'dark' ||
+                          (themeMode === 'system' &&
+                            window.matchMedia('(prefers-color-scheme: dark)').matches);
+                        if (isDark) {
+                          document.documentElement.classList.add('dark');
+                        } else {
+                          document.documentElement.classList.remove('dark');
+                        }
+                      }}
                       className={`p-2 rounded-lg border flex items-center justify-center gap-1.5 transition-colors font-medium capitalize ${
                         form.theme === themeMode
                           ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
@@ -494,7 +483,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       key={lang.id}
                       type="button"
-                      onClick={() => setForm({ ...form, language: lang.id as AppLang })}
+                      onClick={() => {
+                        const newLang = lang.id as AppLang;
+                        setForm((prev) => ({ ...prev, language: newLang }));
+                        i18n.init(newLang);
+                      }}
                       className={`p-2 rounded-lg border text-center transition-colors font-medium ${
                         form.language === lang.id
                           ? 'bg-agent-accent/15 border-agent-accent text-agent-accent'
@@ -589,7 +582,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="px-4 py-3 border-t border-agent-border bg-agent-card flex justify-end gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-3 py-1.5 rounded-lg text-agent-muted hover:text-agent-text hover:bg-agent-surface transition-colors"
           >
             {t('btn_cancel')}

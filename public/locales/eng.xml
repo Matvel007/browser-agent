@@ -13,7 +13,7 @@
   <new_chat>New chat</new_chat>
 
   <!-- Model & Provider -->
-  <no_model_selected>No model selected</no_model_selected>
+  <no_model_selected>No model</no_model_selected>
   <provider_routerai>RouterAI (Russia)</provider_routerai>
   <provider_aitunnel>AItunnel (Russia)</provider_aitunnel>
   <provider_openai>OpenAI</provider_openai>
@@ -24,7 +24,7 @@
   <fetch_models>Fetch models list</fetch_models>
   <fetching_models>Loading models...</fetching_models>
   <models_found>Models found (text-only): {count}</models_found>
-  <fetch_models_error>Failed to load models. Check your API key and URL.</fetch_models_error>
+  <fetch_models_error>Failed to load models. Check API address.</fetch_models_error>
   <search_model_placeholder>Search model...</search_model_placeholder>
 
   <!-- Message & Input -->
@@ -33,7 +33,7 @@
   <stop_generation>Stop generation</stop_generation>
   <copy_message>Copy</copy_message>
   <copied>Copied</copied>
-  <rollback_message>Rollback chat to this message</rollback_message>
+  <rollback_message>Rollback</rollback_message>
   <welcome_title>How can I help?</welcome_title>
   <welcome_subtitle>Ask a question or assign a task on the browser page.</welcome_subtitle>
 

@@ -157,10 +157,6 @@ export function estimateHistoryTokens(messages: ChatMessage[], systemPrompt?: st
 
 export class LLMClient {
   public static async fetchAvailableModels(settings: AppSettings): Promise<string[]> {
-    if (!settings.apiKey) {
-      throw new Error('API-ключ не указан. Введите ключ для загрузки моделей.');
-    }
-
     let baseUrl = 'https://api.openai.com/v1';
     if (settings.provider === 'routerai') {
       baseUrl = 'https://routerai.ru/api/v1';
@@ -182,11 +178,12 @@ export class LLMClient {
       ];
     }
 
-    const response = await fetch(`${baseUrl}/models`, {
-      headers: {
-        Authorization: `Bearer ${settings.apiKey}`,
-      },
-    });
+    const headers: Record<string, string> = {};
+    if (settings.apiKey) {
+      headers['Authorization'] = `Bearer ${settings.apiKey}`;
+    }
+
+    const response = await fetch(`${baseUrl}/models`, { headers });
 
     if (!response.ok) {
       const err = await response.text();
