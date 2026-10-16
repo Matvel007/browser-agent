@@ -31,7 +31,7 @@
 
 ## Overview
 
-**Browser Agent** is a side-panel AI assistant for Chrome, Chromium and Yandex Browser. It reads pages, clicks, types, switches tabs, inspects console and network through the DevTools Protocol, and searches the web. Tool output is bounded, large data is stored as artifacts, and your full chat history is never deleted by compaction.
+**Browser Agent** is a side-panel AI assistant for Chromium browsers, including Chrome and Yandex Browser. It reads pages, clicks, types, switches tabs, inspects console and network through the DevTools Protocol, and searches the web. Tool output is bounded, large data is stored as artifacts, and your full chat history is never deleted by compaction.
 
 ---
 
@@ -69,7 +69,7 @@ npm ci
 npm run build
 ```
 
-Then open `chrome://extensions` (or `browser://extensions` in Yandex Browser), enable **Developer mode**, click **Load unpacked**, and select the `dist` folder.
+Then open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder. Other Chromium browsers use the same flow on their extensions page.
 
 > Requires Node.js 22.12+, 24 or 26+.
 
@@ -103,7 +103,7 @@ API keys stay in local extension storage and are never written to chat history o
 - Console and network capture start when the debugger attaches.
 - Opening the built-in DevTools can detach the extension's debugger.
 - DuckDuckGo may block programmatic queries; a CAPTCHA is reported as an error.
-- Yandex Browser 26.8 may block auto-loaded unpacked extensions — load `dist` manually.
+- Some Chromium builds may block auto-loaded unpacked extensions; load `dist` manually from the extensions page.
 
 ---
 
