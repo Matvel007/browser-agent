@@ -16,7 +16,7 @@ GUIDELINES:
 export const DEFAULT_SETTINGS: AppSettings = {
   provider: 'openai',
   apiKey: '',
-  model: 'gpt-4o',
+  model: '',
   customBaseUrl: '',
   temperature: 0.7,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,

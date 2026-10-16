@@ -52,6 +52,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [showKey, setShowKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setForm({
+        ...settings,
+        model: settings.model || PROVIDER_PRESETS[settings.provider || 'openai'].defaultModel,
+      });
+    }
+  }, [isOpen, settings]);
+
   if (!isOpen) return null;
 
   const handleProviderChange = (provider: ProviderType) => {

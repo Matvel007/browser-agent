@@ -1,16 +1,21 @@
 import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, User, Copy, Check } from 'lucide-react';
+import { Bot, User, Copy, Check, Settings } from 'lucide-react';
 import { ChatMessage } from '../../types';
 import { ToolStepCard } from './ToolStepCard';
 
 interface MessageListProps {
   messages: ChatMessage[];
   isGenerating: boolean;
+  onOpenSettings?: () => void;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, isGenerating }) => {
+export const MessageList: React.FC<MessageListProps> = ({
+  messages,
+  isGenerating,
+  onOpenSettings,
+}) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
@@ -83,6 +88,20 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, isGenerating
                     {/* Blinking cursor while streaming */}
                     {message.isStreaming && (
                       <span className="inline-block w-2 h-4 bg-[#10a37f] animate-pulse ml-0.5 align-middle" />
+                    )}
+
+                    {/* Interactive button to open settings if unconfigured */}
+                    {message.content.includes('Настройки') && onOpenSettings && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={onOpenSettings}
+                          className="px-3 py-1.5 rounded-lg bg-[#10a37f] hover:bg-[#0e8e6e] text-white text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm"
+                        >
+                          <Settings className="w-3.5 h-3.5" />
+                          <span>⚙️ Открыть настройки</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

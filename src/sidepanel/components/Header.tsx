@@ -43,10 +43,24 @@ export const Header: React.FC<HeaderProps> = ({
                 CDP
               </span>
             </h1>
-            <p className="text-[11px] text-[#b4b4b4] flex items-center gap-1 mt-0.5">
-              <Cpu className="w-3 h-3 text-[#10a37f]" />
-              <span className="truncate max-w-[120px] font-mono">{settings.model || 'gpt-4o'}</span>
-            </p>
+            {settings.apiKey && settings.model ? (
+              <p className="text-[11px] text-[#b4b4b4] flex items-center gap-1 mt-0.5">
+                <Cpu className="w-3 h-3 text-[#10a37f]" />
+                <span className="truncate max-w-[120px] font-mono">{settings.model}</span>
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                title="Нажмите, чтобы подключить провайдер и выбрать модель"
+                className="text-[11px] flex items-center gap-1 mt-0.5 text-amber-400 hover:text-amber-300 transition-colors"
+              >
+                <Cpu className="w-3 h-3 text-amber-400" />
+                <span className="truncate max-w-[140px] font-medium underline underline-offset-2">
+                  Модель не выбрана
+                </span>
+              </button>
+            )}
           </div>
         </div>
 

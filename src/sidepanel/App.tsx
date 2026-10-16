@@ -32,10 +32,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     getSettings().then((s) => {
       setSettings(s);
-      // Auto-open settings if no API key is set
-      if (!s.apiKey) {
-        setIsSettingsOpen(true);
-      }
     });
 
     getChatHistory().then((h) => {
@@ -105,17 +101,24 @@ export const App: React.FC = () => {
 
   // Agent execution loop
   const handleSendMessage = async (text: string) => {
-    if (!settings.apiKey) {
-      setIsSettingsOpen(true);
-      return;
-    }
-
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
       role: 'user',
       content: text,
       timestamp: Date.now(),
     };
+
+    if (!settings.apiKey || !settings.model) {
+      const notConfiguredMsg: ChatMessage = {
+        id: `ast_${Date.now() + 1}`,
+        role: 'assistant',
+        content: `👋 **Пожалуйста, настройте ИИ-провайдер и выберите модель**\n\nЧтобы я мог отвечать на вопросы и управлять браузером через Chrome DevTools, необходимо подключить ИИ:\n\n1. Перейдите в **⚙️ Настройки** (кнопка вверху справа или кнопка ниже).\n2. Выберите подходящего провайдера (**OpenAI**, **DeepSeek**, **Google Gemini**, **Anthropic** или **Custom**).\n3. Вставьте ваш **API-ключ** и укажите желаемую модель.`,
+        timestamp: Date.now() + 1,
+      };
+
+      setMessages((prev) => [...prev, userMsg, notConfiguredMsg]);
+      return;
+    }
 
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
@@ -298,7 +301,11 @@ export const App: React.FC = () => {
       />
 
       {/* ChatGPT Message List */}
-      <MessageList messages={messages} isGenerating={isGenerating} />
+      <MessageList
+        messages={messages}
+        isGenerating={isGenerating}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
 
       {/* Message Input & Quick Action Chips */}
       <MessageInput
