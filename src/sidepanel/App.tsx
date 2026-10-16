@@ -20,7 +20,7 @@ import {
   saveSingleSession,
   deleteChatSession,
 } from '../services/storage';
-import { LLMClient, estimateHistoryTokens } from '../services/llm';
+import { LLMClient, estimateHistoryTokens, estimateTokens } from '../services/llm';
 import { i18n, t } from '../services/i18n';
 
 export const App: React.FC = () => {
@@ -173,6 +173,118 @@ export const App: React.FC = () => {
     setIsGenerating(false);
   };
 
+  // Context Compression routine
+  const performCompression = async (targetMessages?: ChatMessage[]) => {
+    const current = targetMessages || messages;
+    const uncompressed = current.filter((m) => !m.isCompressionCard);
+    if (uncompressed.length < 2) {
+      const infoMsg: ChatMessage = {
+        id: `ast_${Date.now()}`,
+        role: 'assistant',
+        content: 'ℹ️ **Сжатие контекста**: для создания сжатия требуется хотя бы 2 сообщения в диалоге.',
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, infoMsg]);
+      return;
+    }
+
+    setIsGenerating(true);
+    const beforeTokens = estimateHistoryTokens(current, settings.systemPrompt);
+
+    try {
+      const summary = await LLMClient.summarizeHistory(settings, current);
+
+      const compressionCard: ChatMessage = {
+        id: `comp_${Date.now()}`,
+        role: 'system',
+        content: summary,
+        summaryText: summary,
+        timestamp: Date.now(),
+        isCompressionCard: true,
+        compressedCount: uncompressed.length,
+        tokensSaved: Math.max(0, beforeTokens - estimateTokens(summary)),
+      };
+
+      const updated = [compressionCard];
+      setMessages(updated);
+
+      if (settings.saveSessionHistory) {
+        saveSingleSession({
+          id: currentSessionId,
+          title: current[0]?.content?.slice(0, 36) || 'Сжатый диалог',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: updated,
+        }).then(() => {
+          getChatSessions().then(setSessions);
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to compress context:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Slash commands executor
+  const handleExecuteCommand = async (cmdStr: string) => {
+    const trimmed = cmdStr.trim();
+    const [command] = trimmed.split(' ');
+
+    switch (command.toLowerCase()) {
+      case '/compact':
+        await performCompression();
+        break;
+
+      case '/clear':
+        handleClearChat();
+        break;
+
+      case '/new':
+        handleNewChat();
+        break;
+
+      case '/settings':
+        setSettingsTab('general');
+        setIsSettingsOpen(true);
+        break;
+
+      case '/model':
+        setSettingsTab('models');
+        setIsSettingsOpen(true);
+        break;
+
+      case '/help': {
+        const helpText = `**Доступные команды Browser Agent:**
+- \`/compact\` — сжать историю диалога и освободить контекст
+- \`/clear\` — очистить сообщения текущего диалога
+- \`/new\` — начать новый чистый диалог
+- \`/settings\` — открыть окно настроек
+- \`/help\` — показать эту справку`;
+
+        const helpMsg: ChatMessage = {
+          id: `ast_${Date.now()}`,
+          role: 'assistant',
+          content: helpText,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, helpMsg]);
+        break;
+      }
+
+      default: {
+        const unknownMsg: ChatMessage = {
+          id: `ast_${Date.now()}`,
+          role: 'assistant',
+          content: `⚠️ Неизвестная команда \`${command}\`. Введите \`/help\` для списка доступных команд.`,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, unknownMsg]);
+        break;
+      }
+    }
+  };
+
   // Agent execution loop
   const handleSendMessage = async (text: string) => {
     const userMsg: ChatMessage = {
@@ -202,7 +314,15 @@ export const App: React.FC = () => {
     abortControllerRef.current = abortController;
 
     try {
-      await runAgentLoop(newMessages, abortController.signal, 0);
+      const finalHistory = await runAgentLoop(newMessages, abortController.signal, 0);
+
+      // Auto-compress when context tokens reach maximum capacity
+      if (finalHistory && !abortController.signal.aborted) {
+        const tokensAfter = estimateHistoryTokens(finalHistory, settings.systemPrompt);
+        if (tokensAfter >= settings.maxContextTokens && finalHistory.length >= 3) {
+          await performCompression(finalHistory);
+        }
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         const errorMsg: ChatMessage = {
@@ -223,8 +343,8 @@ export const App: React.FC = () => {
     currentHistory: ChatMessage[],
     signal: AbortSignal,
     stepCount: number
-  ): Promise<void> => {
-    if (stepCount > 8) return;
+  ): Promise<ChatMessage[]> => {
+    if (stepCount > 8) return currentHistory;
 
     const assistantMsgId = `ast_${Date.now()}`;
     const initialAssistantMsg: ChatMessage = {
@@ -317,9 +437,11 @@ export const App: React.FC = () => {
         const nextHistory = updatedHistory.map((m) =>
           m.id === assistantMsgId ? { ...m, toolCalls: executedToolCalls } : m
         );
-        await runAgentLoop(nextHistory, signal, stepCount + 1);
+        return await runAgentLoop(nextHistory, signal, stepCount + 1);
       }
     }
+
+    return updatedHistory;
   };
 
   const executeDevToolsAction = (toolName: string, args: any): Promise<any> => {
@@ -387,6 +509,7 @@ export const App: React.FC = () => {
         isGenerating={isGenerating}
         initialText={restoredInputText}
         onTextConsumed={() => setRestoredInputText('')}
+        onExecuteCommand={handleExecuteCommand}
       />
 
       {/* OpenCode-style Model Selector Bar with Context Gauge */}
@@ -400,6 +523,7 @@ export const App: React.FC = () => {
           const updated = { ...settings, model };
           handleSaveSettings(updated);
         }}
+        onTriggerCompact={() => performCompression()}
         usedTokens={usedTokens}
         messageCount={messages.length}
       />

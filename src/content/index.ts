@@ -107,7 +107,7 @@ function injectFloatingAgentWidget() {
       transform: translateX(0);
     }
 
-    /* Drop-to-Close Target Zone */
+    /* Drop-to-Close Target Zone matching Browser Agent theme */
     #agent-drop-close {
       position: fixed;
       top: 85%;
@@ -116,30 +116,33 @@ function injectFloatingAgentWidget() {
       width: 76px;
       height: 76px;
       border-radius: 50%;
-      background: rgba(20, 20, 20, 0.92);
-      border: 2px dashed rgba(255, 68, 68, 0.6);
+      background: rgba(30, 30, 30, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1.5px dashed rgba(55, 148, 255, 0.5);
       z-index: 2147483647;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      color: #ff4444;
+      color: #cccccc;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.2s, transform 0.2s, border-color 0.2s, box-shadow 0.2s, background 0.2s;
-      box-shadow: 0 0 15px rgba(255, 68, 68, 0.25);
+      transition: opacity 0.2s, transform 0.2s, border-color 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 16px rgba(55, 148, 255, 0.15);
     }
     #agent-drop-close.visible {
       opacity: 1;
       transform: translate(-50%, -50%) scale(1);
     }
     #agent-drop-close.active {
-      border-color: #ff3344;
+      border-color: #3794ff;
       border-style: solid;
-      background: rgba(255, 51, 68, 0.25);
-      box-shadow: 0 0 35px rgba(255, 51, 68, 0.85);
-      transform: translate(-50%, -50%) scale(1.2);
+      background: rgba(55, 148, 255, 0.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 30px rgba(55, 148, 255, 0.55);
+      transform: translate(-50%, -50%) scale(1.15);
+      color: #ffffff;
     }
 
     /* Particle Explosion */
@@ -171,11 +174,11 @@ function injectFloatingAgentWidget() {
   const dropTarget = document.createElement('div');
   dropTarget.id = 'agent-drop-close';
   dropTarget.innerHTML = `
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="18" y1="6" x2="6" y2="18"/>
       <line x1="6" y1="6" x2="18" y2="18"/>
     </svg>
-    <span style="font-size:9px;margin-top:2px;font-weight:700;letter-spacing:0.5px">ЗАКРЫТЬ</span>
+    <span style="font-size:9px;margin-top:2px;font-weight:600;letter-spacing:0.5px">ЗАКРЫТЬ</span>
   `;
 
   // Floating Button Element

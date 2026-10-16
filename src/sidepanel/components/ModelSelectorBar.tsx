@@ -9,6 +9,7 @@ interface ModelSelectorBarProps {
   settings: AppSettings;
   onOpenModelSettings: () => void;
   onSelectModel: (model: string) => void;
+  onTriggerCompact?: () => void;
   usedTokens: number;
   messageCount: number;
 }
@@ -254,7 +255,7 @@ export const ModelSelectorBar: React.FC<ModelSelectorBarProps> = ({
         usedTokens={usedTokens}
         maxTokens={settings.maxContextTokens || 252000}
         messageCount={messageCount}
-        compressionThreshold={settings.compressionThreshold || 80}
+        onTriggerCompact={onTriggerCompact}
       />
     </div>
   );

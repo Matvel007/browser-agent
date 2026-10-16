@@ -5,14 +5,15 @@ interface ContextGaugeProps {
   usedTokens: number;
   maxTokens: number;
   messageCount: number;
-  compressionThreshold: number;
+  compressionThreshold?: number;
+  onTriggerCompact?: () => void;
 }
 
 export const ContextGauge: React.FC<ContextGaugeProps> = ({
   usedTokens,
   maxTokens,
   messageCount,
-  compressionThreshold,
+  onTriggerCompact,
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -26,13 +27,11 @@ export const ContextGauge: React.FC<ContextGaugeProps> = ({
 
   // Determine color based on utilization
   const getColor = () => {
-    if (percentage > compressionThreshold) return '#ff4444';
-    if (percentage > 70) return '#e5a50a';
-    if (percentage > 40) return '#3794ff';
+    if (percentage >= 100) return '#ef4444';
+    if (percentage >= 80) return '#f59e0b';
+    if (percentage >= 40) return '#3794ff';
     return '#858585';
   };
-
-  const isCompressed = percentage >= compressionThreshold;
 
   return (
     <div className="relative flex items-center">
@@ -74,9 +73,10 @@ export const ContextGauge: React.FC<ContextGaugeProps> = ({
 
       {/* Stats Tooltip */}
       {showTooltip && (
-        <div className="absolute bottom-8 right-0 z-50 w-52 p-2.5 rounded-lg bg-agent-card border border-agent-border shadow-xl text-agent-text text-xs space-y-1.5 select-none pointer-events-none">
-          <div className="font-semibold text-[11px] text-agent-text border-b border-agent-border pb-1">
-            {t('context_usage')}
+        <div className="absolute bottom-8 right-0 z-50 w-56 p-2.5 rounded-xl bg-agent-card border border-agent-border shadow-2xl text-agent-text text-xs space-y-1.5 select-none">
+          <div className="font-semibold text-[11px] text-agent-text border-b border-agent-border pb-1 flex justify-between items-center">
+            <span>{t('context_usage')}</span>
+            <span className="text-agent-accent font-mono">{percentage}%</span>
           </div>
           <div className="text-[11px] text-agent-muted flex justify-between">
             <span>{t('context_messages', { count: messageCount })}</span>
@@ -90,15 +90,25 @@ export const ContextGauge: React.FC<ContextGaugeProps> = ({
               })}
             </span>
           </div>
-          <div className="text-[11px] flex justify-between pt-0.5 border-t border-agent-border">
-            <span className="text-agent-muted">{t('context_usage')}:</span>
-            <span
-              className={`font-semibold ${
-                isCompressed ? 'text-amber-500' : 'text-agent-muted'
-              }`}
-            >
-              {isCompressed ? t('compression_active') : t('compression_idle')}
-            </span>
+
+          <div className="pt-1.5 border-t border-agent-border">
+            {onTriggerCompact ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTooltip(false);
+                  onTriggerCompact();
+                }}
+                className="w-full py-1 px-2 rounded-md bg-agent-surface hover:bg-agent-border border border-agent-border text-agent-accent text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span>🗜️</span>
+                <span>Сжать контекст (/compact)</span>
+              </button>
+            ) : (
+              <div className="text-[10px] text-agent-muted text-center">
+                Автосжатие при заполнении лимита
+              </div>
+            )}
           </div>
         </div>
       )}

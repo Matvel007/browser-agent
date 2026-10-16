@@ -411,20 +411,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block font-medium text-agent-text mb-1">
-                  {t('label_compression_threshold')}
-                </label>
-                <input
-                  type="number"
-                  min="50"
-                  max="95"
-                  value={form.compressionThreshold}
-                  onChange={(e) =>
-                    setForm({ ...form, compressionThreshold: parseInt(e.target.value) || 80 })
-                  }
-                  className="w-full bg-agent-card border border-agent-border focus:border-agent-accent rounded-lg px-3 py-1.5 text-xs text-agent-text outline-none font-mono"
-                />
+              <div className="p-3 rounded-xl bg-agent-card border border-agent-border text-agent-muted text-xs leading-relaxed space-y-1.5">
+                <div className="font-semibold text-agent-text flex items-center gap-1.5">
+                  <span className="text-sm">🗜️</span>
+                  <span>Автоматическое сжатие контекста</span>
+                </div>
+                <p className="text-[11px] text-agent-muted">
+                  Диалог автоматически сжимается при заполнении максимального лимита токенов, а также вручную по команде <code className="bg-agent-surface px-1.5 py-0.5 rounded text-agent-accent font-mono font-medium">/compact</code>. Сжатые блоки сохраняются в истории в виде компактных раскрывающихся карточек.
+                </p>
               </div>
             </div>
           )}

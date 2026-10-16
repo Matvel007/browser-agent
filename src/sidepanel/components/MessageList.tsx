@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, User, Copy, Check, Undo2, Settings } from 'lucide-react';
+import { Bot, User, Copy, Check, Undo2, Settings, ChevronDown } from 'lucide-react';
 import { ChatMessage } from '../../types';
 import { ToolStepCard } from './ToolStepCard';
 import { t } from '../../services/i18n';
@@ -21,6 +21,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [expandedCompMap, setExpandedCompMap] = React.useState<Record<string, boolean>>({});
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -30,6 +31,10 @@ export const MessageList: React.FC<MessageListProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const toggleCompExpand = (id: string) => {
+    setExpandedCompMap((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   return (
@@ -48,6 +53,50 @@ export const MessageList: React.FC<MessageListProps> = ({
         </div>
       ) : (
         messages.map((message, index) => {
+          if (message.isCompressionCard) {
+            const isExpanded = Boolean(expandedCompMap[message.id]);
+            return (
+              <div key={message.id} className="my-2.5 flex justify-center w-full">
+                <div className="w-full max-w-[94%] bg-agent-card border border-agent-border hover:border-agent-accent/40 rounded-xl overflow-hidden transition-all shadow-sm">
+                  {/* Collapsed Header Bar */}
+                  <button
+                    type="button"
+                    onClick={() => toggleCompExpand(message.id)}
+                    className="w-full px-3.5 py-2 flex items-center justify-between text-xs bg-agent-surface/60 hover:bg-agent-surface transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">🗜️</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-agent-text text-xs">Сжатие контекста</span>
+                        <span className="text-agent-muted text-[11px]">
+                          (сжато {message.compressedCount || 0} сообщ.
+                          {message.tokensSaved ? `, сохранено ~${Math.round(message.tokensSaved / 1000)}k токенов` : ''})
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-agent-muted transition-transform duration-200 ${
+                        isExpanded ? 'rotate-180 text-agent-text' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* Collapsible Content */}
+                  {isExpanded && (
+                    <div className="p-3 border-t border-agent-border bg-agent-card text-xs text-agent-text space-y-1.5 animate-in fade-in duration-150">
+                      <div className="text-[11px] font-medium text-agent-accent">
+                        Сводка сохранённого контекста:
+                      </div>
+                      <div className="text-agent-muted text-xs leading-relaxed whitespace-pre-wrap font-sans">
+                        {message.summaryText || message.content}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           const isUser = message.role === 'user';
 
           if (isUser) {

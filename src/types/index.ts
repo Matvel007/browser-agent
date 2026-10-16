@@ -23,7 +23,7 @@ export interface AppSettings {
   saveSessionHistory: boolean;
   maxHistoryMessages: number;
   maxContextTokens: number;
-  compressionThreshold: number;
+  compressionThreshold?: number;
   customHotkey: string;
 }
 
@@ -44,6 +44,10 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCallRecord[];
   isStreaming?: boolean;
+  isCompressionCard?: boolean;
+  compressedCount?: number;
+  tokensSaved?: number;
+  summaryText?: string;
 }
 
 export interface ChatSession {

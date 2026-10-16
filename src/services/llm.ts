@@ -228,6 +228,56 @@ export class LLMClient {
     return Array.from(new Set(filtered));
   }
 
+  public static async summarizeHistory(
+    settings: AppSettings,
+    messagesToCompress: ChatMessage[],
+    abortSignal?: AbortSignal
+  ): Promise<string> {
+    const textHistory = messagesToCompress
+      .filter((m) => !m.isCompressionCard)
+      .map((m) => `${m.role === 'user' ? 'Пользователь' : 'Ассистент'}: ${m.content}`)
+      .join('\n\n');
+
+    const prompt = `Пожалуйста, создай краткую, точную и структурированную сводку (summary) следующей переписки.
+Сохрани ключевые факты, сущности, намерения пользователя, важные детали (URL, селекторы, результаты действий).
+Сводка должна быть на русском языке, в виде 2-4 четких пунктов или кратких абзацев, без лишних вступлений:
+
+${textHistory.slice(-12000)}`;
+
+    try {
+      if (settings.apiKey && settings.model) {
+        const dummyMessages: ChatMessage[] = [
+          {
+            id: 'sum_req',
+            role: 'user',
+            content: prompt,
+            timestamp: Date.now(),
+          },
+        ];
+        const res = await this.chat(
+          { ...settings, temperature: 0.3 },
+          dummyMessages,
+          {},
+          abortSignal
+        );
+        if (res.content && res.content.trim()) {
+          return res.content.trim();
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to summarize via LLM, falling back to extractive summary:', err);
+    }
+
+    // Fallback: fast extractive summary if LLM call is unavailable or fails
+    const userTopics = messagesToCompress
+      .filter((m) => m.role === 'user' && !m.isCompressionCard)
+      .map((m) => `• ${m.content.slice(0, 90).replace(/\n/g, ' ')}...`)
+      .slice(-5)
+      .join('\n');
+
+    return `Диалог из ${messagesToCompress.length} сообщений.\nОсновные темы:\n${userTopics || '• Обсуждение страницы браузера и задач'}`;
+  }
+
   public static async chat(
     settings: AppSettings,
     messages: ChatMessage[],
@@ -238,10 +288,17 @@ export class LLMClient {
       throw new Error('API-ключ не указан. Настройте провайдер и модель.');
     }
 
-    // Apply context limits
+    // Apply context limits while preserving compression summary
     let effectiveMessages = [...messages];
     if (settings.maxHistoryMessages && settings.maxHistoryMessages > 0) {
-      effectiveMessages = effectiveMessages.slice(-settings.maxHistoryMessages);
+      const compCardIndex = effectiveMessages.findIndex((m) => m.isCompressionCard);
+      if (compCardIndex !== -1) {
+        const compCard = effectiveMessages[compCardIndex];
+        const afterComp = effectiveMessages.slice(compCardIndex + 1);
+        effectiveMessages = [compCard, ...afterComp.slice(-settings.maxHistoryMessages)];
+      } else {
+        effectiveMessages = effectiveMessages.slice(-settings.maxHistoryMessages);
+      }
     }
 
     if (
@@ -293,6 +350,13 @@ export class LLMClient {
     }
 
     for (const msg of messages) {
+      if (msg.isCompressionCard) {
+        formattedMessages.push({
+          role: 'system',
+          content: `[Сводка предыдущего сжатого контекста диалога]:\n${msg.summaryText || msg.content}`,
+        });
+        continue;
+      }
       if (msg.role === 'user') {
         formattedMessages.push({ role: 'user', content: msg.content });
       } else if (msg.role === 'assistant') {
@@ -452,6 +516,17 @@ export class LLMClient {
 
     const contents: any[] = [];
     for (const msg of messages) {
+      if (msg.isCompressionCard) {
+        contents.push({
+          role: 'user',
+          parts: [{ text: `[Контекст предыдущей части диалога]:\n${msg.summaryText || msg.content}` }],
+        });
+        contents.push({
+          role: 'model',
+          parts: [{ text: 'Понял, учитываю контекст предыдущей части диалога.' }],
+        });
+        continue;
+      }
       const role = msg.role === 'assistant' ? 'model' : 'user';
       contents.push({
         role,
@@ -547,6 +622,17 @@ export class LLMClient {
 
     const formattedMessages: any[] = [];
     for (const msg of messages) {
+      if (msg.isCompressionCard) {
+        formattedMessages.push({
+          role: 'user',
+          content: `[Контекст предыдущей части диалога]:\n${msg.summaryText || msg.content}`,
+        });
+        formattedMessages.push({
+          role: 'assistant',
+          content: 'Понял, учитываю контекст предыдущей части диалога.',
+        });
+        continue;
+      }
       if (msg.role === 'user' || msg.role === 'assistant') {
         formattedMessages.push({
           role: msg.role,
