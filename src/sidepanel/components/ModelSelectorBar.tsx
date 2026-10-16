@@ -42,6 +42,7 @@ export const ModelSelectorBar: React.FC<ModelSelectorBarProps> = ({
   settings,
   onOpenModelSettings,
   onSelectModel,
+  onTriggerCompact,
   usedTokens,
   messageCount,
 }) => {

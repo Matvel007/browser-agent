@@ -1,6 +1,6 @@
 import { devtools } from '../services/devtools';
 
-console.log('[Background] DevTools AI Copilot service worker initialized.');
+console.log('[Background] Browser Agent service worker initialized.');
 
 // Configure Chrome Side Panel behavior and auto-open on install/reload
 chrome.runtime.onInstalled.addListener(async () => {
