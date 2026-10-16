@@ -48,7 +48,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["locales/*"],
+      "resources": ["locales/*", "icons/logo.svg"],
       "matches": ["<all_urls>"]
     }
   ]

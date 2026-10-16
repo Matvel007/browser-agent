@@ -1,161 +1,107 @@
 import { devtools } from '../services/devtools';
+import { executeTool } from '../services/tool-executor';
+import { getSettings } from '../services/storage';
+import { resolveLanguage } from '../services/language';
 
-console.log('[Background] Browser Agent service worker initialized.');
-
-// Configure Chrome Side Panel behavior and auto-open on install/reload
-chrome.runtime.onInstalled.addListener(async () => {
-  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    try {
-      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    } catch (err) {
-      console.warn('Could not set sidePanel behavior:', err);
-    }
-  }
-
-  // Create context menu item on right-click anywhere on page
-  if (chrome.contextMenus) {
-    chrome.contextMenus.removeAll(() => {
-      chrome.contextMenus.create({
-        id: 'open_devtools_copilot',
-        title: '🤖 Открыть Browser Agent',
-        contexts: ['page', 'selection', 'link', 'editable'],
-      });
-    });
-  }
+const runs = new Map<string, { controller: AbortController; sessionId: string; tabId?: number; touched: number }>();
+const cancelled = new Map<string, number>();
+const lastTargets = new Map<number, number>();
+let widgetUpdates = Promise.resolve();
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  void chrome.tabs.get(tabId).then(tab => { if (/^https?:/.test(tab.url || '')) lastTargets.set(windowId, tabId); }).catch(() => {});
 });
 
-// Handle right-click context menu
-chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'open_devtools_copilot' && tab?.windowId && chrome.sidePanel) {
-    try {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    } catch (err) {
-      console.warn('Failed to open sidePanel from context menu:', err);
-    }
-  }
+chrome.runtime.onInstalled.addListener(() => {
+  void chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(console.warn);
+  chrome.contextMenus.removeAll(() => chrome.contextMenus.create({ id: 'open_browser_agent', title: chrome.i18n?.getUILanguage?.().startsWith('ru') ? 'Открыть Browser Agent' : 'Open Browser Agent', contexts: ['page', 'selection', 'link', 'editable'] }));
+  void chrome.storage.local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(console.warn);
+  if (chrome.storage.session) widgetUpdates = widgetUpdates.then(() => chrome.storage.session.get(null)).then(state => chrome.storage.session.remove(Object.keys(state).filter(key => key.startsWith('widget_hidden_')))).catch(console.warn);
 });
 
-// Also open side panel on action click
-chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.windowId && chrome.sidePanel && chrome.sidePanel.open) {
-    try {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    } catch (err) {
-      console.warn('Failed to open sidePanel:', err);
-    }
-  }
-});
-
-// Listen to messages from Side Panel and Content Script
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  const { action, payload } = message || {};
-
-  if (action === 'OPEN_SIDE_PANEL') {
-    const tabId = _sender.tab?.id;
-    const windowId = _sender.tab?.windowId;
-    if (windowId && chrome.sidePanel && chrome.sidePanel.open) {
-      chrome.sidePanel.open({ windowId }).catch((err) => {
-        console.warn('Failed to open sidePanel by windowId, trying tabId:', err);
-        if (tabId) {
-          chrome.sidePanel.open({ tabId }).catch(console.warn);
-        }
-      });
-    }
-    sendResponse({ success: true });
-    return true;
-  }
-
-  if (action === 'OPEN_SHORTCUTS_SETTINGS') {
-    const shortcutUrl = navigator.userAgent.includes('YaBrowser')
-      ? 'browser://extensions/shortcuts'
-      : 'chrome://extensions/shortcuts';
-    chrome.tabs.create({ url: shortcutUrl }).catch(() => {
-      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(console.warn);
-    });
-    sendResponse({ success: true });
-    return true;
-  }
-
-  if (action === 'GET_ACTIVE_TAB') {
-    chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-      const activeTab = tabs[0];
-      if (!activeTab || !activeTab.id) {
-        sendResponse({ success: false, error: 'No active tab found' });
-        return;
-      }
-      sendResponse({
-        success: true,
-        tab: {
-          id: activeTab.id,
-          title: activeTab.title || 'Untitled',
-          url: activeTab.url || '',
-          favIconUrl: activeTab.favIconUrl,
-          isAttached: devtools.isAttached(activeTab.id),
-        },
-      });
-    }).catch((err) => sendResponse({ success: false, error: err.message }));
-    return true; // async sendResponse
-  }
-
-  if (action === 'EXECUTE_DEVTOOLS_TOOL') {
-    const { tabId, toolName, args } = payload;
-    handleToolExecution(tabId, toolName, args)
-      .then((result) => sendResponse({ success: true, result }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-
-  if (action === 'ATTACH_DEBUGGER') {
-    devtools.attach(payload.tabId)
-      .then((success) => sendResponse({ success }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-
-  if (action === 'DETACH_DEBUGGER') {
-    devtools.detach(payload.tabId)
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-});
-
-async function handleToolExecution(tabId: number, toolName: string, args: any): Promise<any> {
-  console.log(`[Background] Executing tool ${toolName} on tab ${tabId}`, args);
-
-  switch (toolName) {
-    case 'devtools_get_page_summary':
-      return await devtools.getPageSummary(tabId);
-
-    case 'devtools_click_element':
-      return await devtools.clickElement(tabId, args.selector);
-
-    case 'devtools_type_text':
-      return await devtools.typeText(tabId, args.selector, args.text, args.clearFirst ?? true);
-
-    case 'devtools_evaluate_js':
-      return await devtools.evaluateJs(tabId, args.code);
-
-    case 'devtools_get_console_logs':
-      return await devtools.getConsoleLogs(tabId);
-
-    case 'devtools_get_network_requests':
-      return await devtools.getNetworkRequests(tabId);
-
-    case 'devtools_inspect_dom':
-      return await devtools.inspectDom(tabId, args.selector || 'body');
-
-    case 'devtools_scroll_page':
-      return await devtools.scrollPage(tabId, args.direction, args.amount ?? 500);
-
-    case 'devtools_navigate':
-      await devtools.navigate(tabId, args.url);
-      return `Navigated tab to ${args.url}`;
-
-    case 'devtools_capture_screenshot':
-      return await devtools.captureScreenshot(tabId);
-
-    default:
-      throw new Error(`Unknown DevTools tool: ${toolName}`);
-  }
+async function openPanel(windowId?: number) {
+  if (chrome.sidePanel?.open && windowId != null) return chrome.sidePanel.open({ windowId });
+  return chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
 }
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.browser_agent_settings) {
+    const before = changes.browser_agent_settings.oldValue || {}, after = changes.browser_agent_settings.newValue || {};
+    if (before.widgetEnabled === after.widgetEnabled && before.language === after.language) return;
+    widgetUpdates = widgetUpdates.then(() => chrome.tabs.query({})).then(async tabs => {
+      if (before.widgetEnabled === false && after.widgetEnabled !== false && chrome.storage.session) {
+        await chrome.storage.session.remove(tabs.map(tab => `widget_hidden_${tab.id}`));
+      }
+      await Promise.all(tabs.filter(tab => tab.id != null).map(tab => chrome.tabs.sendMessage(tab.id!, { action: 'WIDGET_VISIBILITY', enabled: after.widgetEnabled !== false }).catch(() => {})));
+    }).catch(console.warn);
+  }
+});
+chrome.tabs.onRemoved.addListener(id => { void chrome.storage.session?.remove(`widget_hidden_${id}`); });
+chrome.action.onClicked.addListener(tab => { void openPanel(tab.windowId).catch(console.warn); });
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'open_browser_agent' || info.menuItemId === 'open_devtools_copilot') void openPanel(tab?.windowId).catch(console.warn);
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
+  const respond = (promise: Promise<any>) => {
+    promise.then(result => sendResponse({ success: true, ...result })).catch(err => sendResponse({ success: false, error: String(err?.message || err) }));
+  };
+  if (message?.action === 'OPEN_SIDE_PANEL') { respond(openPanel(sender.tab?.windowId).then(() => ({}))); return true; }
+  if (message?.action === 'GET_WIDGET_SETTINGS') {
+    respond((async () => {
+      await widgetUpdates;
+      const [settings, local, state] = await Promise.all([getSettings(), chrome.storage.local.get('browser_agent_widget_position'), chrome.storage.session?.get(`widget_hidden_${sender.tab?.id}`)]);
+      return { enabled: settings.widgetEnabled, position: local.browser_agent_widget_position, hidden: Boolean(state?.[`widget_hidden_${sender.tab?.id}`]), language: resolveLanguage(settings.language) };
+    })()); return true;
+  }
+  if (message?.action === 'SET_WIDGET_POSITION') {
+    if (!Number.isFinite(message.x) || !Number.isFinite(message.y)) return;
+    respond(chrome.storage.local.set({ browser_agent_widget_position: { x: Math.min(1, Math.max(0, message.x)), y: Math.min(1, Math.max(0, message.y)) } }).then(() => ({}))); return true;
+  }
+  if (message?.action === 'HIDE_WIDGET') {
+    respond(Promise.resolve(chrome.storage.session?.set({ [`widget_hidden_${sender.tab?.id}`]: true })).then(() => ({}))); return true;
+  }
+  // Only trusted extension pages can invoke privileged operations; content scripts only open the panel.
+  if (!sender.url?.startsWith(chrome.runtime.getURL(''))) return;
+  switch (message?.action) {
+    case 'OPEN_SHORTCUTS_SETTINGS':
+      respond(chrome.tabs.create({ url: navigator.userAgent.includes('YaBrowser') ? 'browser://extensions/shortcuts' : 'chrome://extensions/shortcuts' }).then(() => ({}))); break;
+    case 'GET_ACTIVE_TAB':
+      respond(chrome.tabs.query({ lastFocusedWindow: true }).then(tabs => {
+        const active = tabs.find(tab => tab.active);
+        const tab = active && /^https?:/.test(active.url || '') ? active : tabs.find(tab => tab.id === lastTargets.get(active?.windowId || -1)) || tabs.find(tab => /^https?:/.test(tab.url || ''));
+        return { tab: tab?.id != null ? { id: tab.id, title: tab.title || '', url: tab.url || '', favIconUrl: tab.favIconUrl, isAttached: devtools.isAttached(tab.id) } : null };
+      })); break;
+    case 'ATTACH_DEBUGGER': respond(devtools.attach(message.payload.tabId).then(() => ({}))); break;
+    case 'DETACH_DEBUGGER': respond(devtools.detach(message.payload.tabId).then(() => ({}))); break;
+    case 'CANCEL_RUN': {
+      const key = message.runId;
+      cancelled.set(key, Date.now()); runs.get(key)?.controller.abort(); runs.delete(key);
+      sendResponse({ success: true }); return;
+    }
+    case 'RELEASE_RUN': runs.delete(message.runId); sendResponse({ success: true }); return;
+    case 'EXECUTE_DEVTOOLS_TOOL': {
+      const payload = message.payload || {};
+      respond((async () => {
+        const now = Date.now();
+        for (const [key, run] of runs) if (now - run.touched > 120000) { run.controller.abort(); runs.delete(key); }
+        for (const [key, at] of cancelled) if (now - at > 120000) cancelled.delete(key);
+        if (!payload.runId || !payload.sessionId) throw new Error('Run and session identity required');
+        if (cancelled.has(payload.runId)) throw new Error('Run was stopped');
+        let run = runs.get(payload.runId);
+        if (!run) { run = { controller: new AbortController(), sessionId: payload.sessionId, tabId: payload.tabId, touched: now }; runs.set(payload.runId, run); }
+        if (run.sessionId !== payload.sessionId) throw new Error('Run/session mismatch');
+        run.touched = now;
+        const deadline = setTimeout(() => run!.controller.abort(), 45000);
+        try {
+          const result = await executeTool(payload.toolName, payload.args || {}, await getSettings(), { tabId: run.tabId, sessionId: run.sessionId, runId: payload.runId, signal: run.controller.signal,
+            history: payload.toolName === 'history_read' && Array.isArray(payload.history) ? payload.history : undefined });
+          if (payload.toolName === 'browser_tabs' && result.ok && result.data?.selectedTabId != null) run.tabId = result.data.selectedTabId;
+          if (payload.toolName === 'browser_tabs' && result.ok && result.data?.closedTabId === run.tabId) run.tabId = undefined;
+          return { result };
+        } finally { clearTimeout(deadline); }
+      })()); break;
+    }
+    default: return;
+  }
+  return true;
+});

@@ -9,6 +9,14 @@ export type ProviderType =
 
 export type AppTheme = 'system' | 'dark' | 'light';
 export type AppLang = 'ru' | 'en' | 'auto';
+export type ToolProfile = 'lean' | 'balanced' | 'full';
+export type SettingsTab = 'models' | 'tools' | 'context' | 'behavior' | 'interface' | 'diagnostics' | 'general' | 'hotkey';
+
+export interface ProviderConfig {
+  apiKey: string;
+  model: string;
+  customBaseUrl?: string;
+}
 
 export interface AppSettings {
   provider: ProviderType;
@@ -25,16 +33,65 @@ export interface AppSettings {
   maxContextTokens: number;
   compressionThreshold?: number;
   customHotkey: string;
+  version: number;
+  providerConfigs: Partial<Record<ProviderType, ProviderConfig>>;
+  disabledTools: string[];
+  toolProfile: ToolProfile;
+  searchEnabled: boolean;
+  searchProvider: 'duckduckgo' | 'tavily';
+  tavilyApiKey: string;
+  maxSteps: number;
+  maxOutputTokens: number;
+  supportsVision: boolean;
+  soundEnabled: boolean;
+  soundVolume: number;
+  widgetEnabled: boolean;
+}
+
+export interface ArtifactRef {
+  id: string;
+  name: string;
+  mime: string;
+  bytes: number;
+  sha256: string;
+  createdAt: number;
+  expiresAt: number;
+  sessionId: string;
+}
+
+export interface ToolResult {
+  ok: boolean;
+  summary: string;
+  data?: any;
+  truncated: boolean;
+  truncation: string[];
+  next?: string;
+  artifact?: ArtifactRef;
+  tokens_est: number;
+  profile: ToolProfile;
+}
+
+export interface ContextSummary {
+  text: string;
+  throughId: string;
+  createdAt: number;
+}
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  estimated: boolean;
 }
 
 export interface ToolCallRecord {
   id: string;
   name: string;
   args: Record<string, any>;
-  status: 'pending' | 'running' | 'success' | 'error';
+  status: 'pending' | 'running' | 'success' | 'error' | 'cancelled';
   result?: any;
   error?: string;
   timestamp: number;
+  providerData?: any;
 }
 
 export interface ChatMessage {
@@ -48,6 +105,10 @@ export interface ChatMessage {
   compressedCount?: number;
   tokensSaved?: number;
   summaryText?: string;
+  summaryThroughId?: string;
+  runId?: string;
+  usage?: TokenUsage;
+  status?: 'completed' | 'stopped' | 'error' | 'limit';
 }
 
 export interface ChatSession {
@@ -56,6 +117,9 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];
+  summary?: ContextSummary;
+  version?: number;
+  messageCount?: number;
 }
 
 export interface ActiveTabInfo {
@@ -82,11 +146,24 @@ export interface NetworkRequestItem {
   type?: string;
   timestamp: number;
   duration?: number;
+  error?: string;
+  frameId?: string;
+  sessionId?: string;
+  responseHeaders?: Record<string, string>;
+  requestHeaders?: Record<string, string>;
+  postData?: string;
+  mimeType?: string;
+  finished?: boolean;
+  startedAt?: number;
 }
 
 export interface AgentActionTool {
   name: string;
   description: string;
+  title?: string;
+  group?: string;
+  details?: string;
+  browser?: boolean;
   parameters: {
     type: 'object';
     properties: Record<string, any>;

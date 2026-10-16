@@ -1,4 +1,6 @@
 // i18n service parsing XML translation resources with preloaded fallback dictionary
+import { resolveLanguage } from './language';
+
 export type SupportedLang = 'ru' | 'en' | 'auto';
 
 const PRELOADED_RU: Record<string, string> = {
@@ -154,22 +156,16 @@ const PRELOADED_EN: Record<string, string> = {
 };
 
 class I18nService {
-  private currentLang: 'ru' | 'en' = 'ru';
-  // Start with preloaded Russian dictionary immediately so synchronous first tick has no raw keys!
-  private dictionary: Record<string, string> = { ...PRELOADED_RU };
+  private currentLang: 'ru' | 'en' = resolveLanguage();
+  private dictionary: Record<string, string> = { ...(this.currentLang === 'ru' ? PRELOADED_RU : PRELOADED_EN) };
   private listeners: Set<() => void> = new Set();
   private loaded: boolean = false;
 
   public async init(prefLang: SupportedLang = 'auto'): Promise<void> {
-    let resolved: 'ru' | 'en' = 'ru';
-    if (prefLang === 'auto') {
-      const navLang = navigator.language?.toLowerCase() || 'ru';
-      resolved = navLang.startsWith('ru') ? 'ru' : 'en';
-    } else {
-      resolved = prefLang === 'en' ? 'en' : 'ru';
-    }
+    const resolved = resolveLanguage(prefLang);
 
     this.currentLang = resolved;
+    if (typeof document !== 'undefined') document.documentElement.lang = resolved;
     const baseDict = resolved === 'en' ? PRELOADED_EN : PRELOADED_RU;
     this.dictionary = { ...baseDict };
     this.notify();
@@ -179,6 +175,7 @@ class I18nService {
 
   public async setLanguage(lang: 'ru' | 'en'): Promise<void> {
     this.currentLang = lang;
+    if (typeof document !== 'undefined') document.documentElement.lang = lang;
     const baseDict = lang === 'en' ? PRELOADED_EN : PRELOADED_RU;
     this.dictionary = { ...baseDict };
     this.notify();
@@ -223,6 +220,7 @@ class I18nService {
     }
 
     // Merge onto dictionary
+    if (this.currentLang !== lang) return;
     this.dictionary = { ...this.dictionary, ...dict };
     this.loaded = true;
   }
@@ -250,3 +248,4 @@ class I18nService {
 
 export const i18n = new I18nService();
 export const t = (key: string, params?: Record<string, any>) => i18n.t(key, params);
+export const tr = (ru: string, en: string) => i18n.getLanguage() === 'ru' ? ru : en;

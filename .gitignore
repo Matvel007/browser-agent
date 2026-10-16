@@ -1,5 +1,53 @@
+# Dependencies
 node_modules/
+
+# Build output (regenerate with npm run build)
 dist/
-.DS_Store
+dist.zip
+*.zip
+
+# Test artifacts
+test-results/
+playwright-report/
+coverage/
+
+# Local tooling caches
+.trace-mcp/
+.npm/
+.cache/
+.vite/
+*.tsbuildinfo
+
+# Secrets and local settings: never commit keys, tokens or personal config
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.secret
+*.token
+secrets.*
+credentials*
 *.local
-.npm
+.npmrc.local
+
+# Diagnostics exports and captured browser data (may contain tokens or page content)
+browser-agent-diagnostics*.json
+*.har
+*.saz
+*.mitm
+*.log
+*.dump
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

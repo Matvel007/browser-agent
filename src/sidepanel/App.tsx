@@ -1,552 +1,206 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActiveTabInfo, AppSettings, ChatSession, SettingsTab } from '../types';
+import { DEFAULT_SETTINGS, deleteChatSession, getChatSession, getChatSessions, getSettings, saveSettings, saveSingleSession } from '../services/storage';
+import { compactSession, runAgent } from '../services/agent';
+import { contextCosts, contextToolCosts, summaryForRollback } from '../services/context';
+import { i18n, tr } from '../services/i18n';
+import { playCompletion, unlockAudio } from '../services/sound';
+import { cleanUrl } from '../services/budget';
+import { logicalMessageCount } from '../services/transcript';
 import { Header } from './components/Header';
 import { MessageList } from './components/MessageList';
-import { MessageInput } from './components/MessageInput';
+import { MessageInput, SLASH_COMMANDS } from './components/MessageInput';
 import { ModelSelectorBar } from './components/ModelSelectorBar';
 import { SettingsModal } from './components/SettingsModal';
 import { SessionsDrawer } from './components/SessionsDrawer';
-import {
-  ActiveTabInfo,
-  AppSettings,
-  ChatMessage,
-  ChatSession,
-  ToolCallRecord,
-} from '../types';
-import {
-  DEFAULT_SETTINGS,
-  getSettings,
-  saveSettings,
-  getChatSessions,
-  saveSingleSession,
-  deleteChatSession,
-} from '../services/storage';
-import { LLMClient, estimateHistoryTokens, estimateTokens } from '../services/llm';
-import { i18n, t } from '../services/i18n';
+
+function newSession(): ChatSession {
+  return { id: crypto.randomUUID(), title: tr('Новый чат', 'New chat'), createdAt: Date.now(), updatedAt: Date.now(), messages: [], version: 2 };
+}
+
+async function runtime(message: any) {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.id) throw new Error(tr('Откройте установленное расширение в браузере', 'Open the installed browser extension'));
+  const response = await chrome.runtime.sendMessage(message);
+  if (!response?.success) throw new Error(response?.error || tr('Нет ответа фонового процесса', 'Background worker did not respond'));
+  return response;
+}
 
 export const App: React.FC = () => {
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'general' | 'models' | 'context' | 'hotkey'>('models');
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-
-  // Sessions and messages
-  const [currentSessionId, setCurrentSessionId] = useState<string>(`sess_${Date.now()}`);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const settingsRef = useRef(settings); settingsRef.current = settings;
+  const [ready, setReady] = useState(false);
+  const [session, setSession] = useState(newSession);
+  const sessionRef = useRef(session);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-
-  // Rollback text input state
-  const [restoredInputText, setRestoredInputText] = useState<string>('');
-
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [, setI18nVersion] = useState(0);
+  const activeTabRef = useRef(activeTab); activeTabRef.current = activeTab;
+  const [isGenerating, setGenerating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('models');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [input, setInput] = useState('');
+  const [notice, setNotice] = useState('');
+  const [, renderLanguage] = useState(0);
+  const operation = useRef<{ id: string; controller: AbortController }>();
+  const saveQueue = useRef(Promise.resolve());
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const switchVersion = useRef(0);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const refreshSessions = async () => { const rows = await getChatSessions(); setSessions(rows); };
+  const persist = (value: ChatSession) => {
+    if (!settingsRef.current.saveSessionHistory) return;
+    saveQueue.current = saveQueue.current.catch(() => {}).then(() => saveSingleSession(value)).then(refreshSessions).catch(err => setNotice(String(err.message)));
+  };
+  const update = (value: ChatSession, immediate = false) => {
+    sessionRef.current = value; setSession(value);
+    clearTimeout(saveTimer.current);
+    if (immediate) persist(value);
+    else saveTimer.current = setTimeout(() => persist(value), 600);
+  };
+  const refreshTab = async () => {
+    try { setActiveTab((await runtime({ action: 'GET_ACTIVE_TAB' })).tab); }
+    catch { setActiveTab(null); }
+  };
 
-  // Subscribe to i18n changes
   useEffect(() => {
-    return i18n.subscribe(() => setI18nVersion((v) => v + 1));
+    let mounted = true;
+    void Promise.allSettled([getSettings(), getChatSessions()]).then(([loaded, rows]) => {
+      if (!mounted) return;
+      if (loaded.status === 'fulfilled') {
+        setSettings(loaded.value); settingsRef.current = loaded.value; void i18n.init(loaded.value.language);
+      }
+      if (rows.status === 'fulfilled') setSessions(rows.value);
+      const errors = [loaded, rows].filter(item => item.status === 'rejected').map(item => item.status === 'rejected' ? String(item.reason?.message || item.reason) : '');
+      if (errors.length) setNotice(errors.join('\n'));
+      setReady(true);
+    });
+    const unsubscribe = i18n.subscribe(() => renderLanguage(v => v + 1));
+    void refreshTab();
+    const listener = () => { void refreshTab(); };
+    if (typeof chrome !== 'undefined') { chrome.tabs?.onActivated.addListener(listener); chrome.tabs?.onUpdated.addListener(listener); }
+    return () => {
+      mounted = false; unsubscribe(); clearTimeout(saveTimer.current);
+      operation.current?.controller.abort();
+      if (operation.current) void runtime({ action: 'CANCEL_RUN', runId: operation.current.id }).catch(() => {});
+      if (typeof chrome !== 'undefined') { chrome.tabs?.onActivated.removeListener(listener); chrome.tabs?.onUpdated.removeListener(listener); }
+    };
   }, []);
 
-  // Initialize Settings, i18n, Theme, and Sessions
   useEffect(() => {
-    getSettings().then((s) => {
-      setSettings(s);
-      i18n.init(s.language);
-      applyTheme(s.theme);
-    });
+    const media = matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => document.documentElement.classList.toggle('dark', settings.theme === 'dark' || (settings.theme === 'system' && media.matches));
+    apply(); media.addEventListener('change', apply); return () => media.removeEventListener('change', apply);
+  }, [settings.theme]);
 
-    getChatSessions().then((loadedSessions) => {
-      setSessions(loadedSessions);
-    });
-
-    fetchActiveTab();
-
-    // Listen to tab activation changes in Chromium
-    if (typeof chrome !== 'undefined' && chrome.tabs) {
-      const handleTabChange = () => fetchActiveTab();
-      chrome.tabs.onActivated?.addListener(handleTabChange);
-      chrome.tabs.onUpdated?.addListener(handleTabChange);
-      return () => {
-        chrome.tabs.onActivated?.removeListener(handleTabChange);
-        chrome.tabs.onUpdated?.removeListener(handleTabChange);
-      };
-    }
-  }, []);
-
-  // Apply Theme to document root
-  const applyTheme = (theme: 'system' | 'dark' | 'light') => {
-    const isDark =
-      theme === 'dark' ||
-      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
-
-  // Save current session automatically when messages change
   useEffect(() => {
-    if (settings.saveSessionHistory && messages.length > 0) {
-      const firstUserMsg = messages.find((m) => m.role === 'user');
-      const title = firstUserMsg ? firstUserMsg.content.slice(0, 36) : 'Диалог';
+    if (settings.language !== 'auto') return;
+    const refreshLanguage = () => { void i18n.init('auto'); };
+    window.addEventListener('languagechange', refreshLanguage);
+    return () => window.removeEventListener('languagechange', refreshLanguage);
+  }, [settings.language]);
 
-      const sessionObj: ChatSession = {
-        id: currentSessionId,
-        title,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        messages,
-      };
-
-      saveSingleSession(sessionObj).then(() => {
-        getChatSessions().then(setSessions);
-      });
-    }
-  }, [messages, currentSessionId, settings.saveSessionHistory]);
-
-  const fetchActiveTab = () => {
-    if (typeof chrome === 'undefined' || !chrome.runtime) return;
-
-    chrome.runtime.sendMessage({ action: 'GET_ACTIVE_TAB' }, (res) => {
-      if (res?.success && res.tab) {
-        setActiveTab(res.tab);
-      }
-    });
-  };
-
-  const handleToggleAttachDebugger = () => {
-    if (!activeTab) return;
-    const action = activeTab.isAttached ? 'DETACH_DEBUGGER' : 'ATTACH_DEBUGGER';
-    chrome.runtime.sendMessage({ action, payload: { tabId: activeTab.id } }, (res) => {
-      if (res?.success) {
-        setActiveTab({ ...activeTab, isAttached: !activeTab.isAttached });
-      }
-    });
-  };
-
-  const handleSaveSettings = (newSettings: AppSettings) => {
-    setSettings(newSettings);
-    saveSettings(newSettings);
-    applyTheme(newSettings.theme);
-  };
-
-  const handleNewChat = () => {
-    setCurrentSessionId(`sess_${Date.now()}`);
-    setMessages([]);
-  };
-
-  const handleSelectSession = (sess: ChatSession) => {
-    setCurrentSessionId(sess.id);
-    setMessages(sess.messages || []);
-  };
-
-  const handleDeleteSession = async (sessId: string) => {
-    await deleteChatSession(sessId);
-    const updated = await getChatSessions();
-    setSessions(updated);
-    if (sessId === currentSessionId) {
-      handleNewChat();
+  const cancel = (detach = false) => {
+    const op = operation.current;
+    if (!op) return;
+    op.controller.abort(); void runtime({ action: 'CANCEL_RUN', runId: op.id }).catch(() => {});
+    if (detach) {
+      operation.current = undefined; setGenerating(false);
+      const current = sessionRef.current;
+      const messages = current.messages.map(m => ({ ...m, isStreaming: false,
+        toolCalls: m.toolCalls?.map(call => ['pending', 'running'].includes(call.status) ? { ...call, status: 'cancelled' as const } : call) }));
+      update({ ...current, messages: [...messages, { id: crypto.randomUUID(), role: 'assistant', content: tr('Выполнение остановлено при смене диалога.', 'Execution stopped when the conversation changed.'), timestamp: Date.now(), status: 'stopped' }], updatedAt: Date.now() }, true);
     }
   };
+  const changeSession = (value: ChatSession) => { switchVersion.current++; cancel(true); clearTimeout(saveTimer.current); sessionRef.current = value; setSession(value); setInput(''); };
+  const openSettings = (tab: SettingsTab) => { setSettingsTab(tab); setSettingsOpen(true); };
 
-  const handleClearChat = () => {
-    if (window.confirm(t('confirm_clear_chat'))) {
-      setMessages([]);
-    }
+  const save = async (value: AppSettings) => {
+    await saveSettings(value); settingsRef.current = value; setSettings(value); await i18n.init(value.language);
   };
 
-  const handleRollback = (index: number, content: string) => {
-    // Put message text back into input
-    setRestoredInputText(content);
-    // Slice history to before this message
-    setMessages((prev) => prev.slice(0, index));
-  };
-
-  const handleStop = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    setIsGenerating(false);
-  };
-
-  // Context Compression routine
-  const performCompression = async (targetMessages?: ChatMessage[]) => {
-    const current = targetMessages || messages;
-    const uncompressed = current.filter((m) => !m.isCompressionCard);
-    if (uncompressed.length < 2) {
-      const infoMsg: ChatMessage = {
-        id: `ast_${Date.now()}`,
-        role: 'assistant',
-        content: 'ℹ️ **Сжатие контекста**: для создания сжатия требуется хотя бы 2 сообщения в диалоге.',
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, infoMsg]);
-      return;
-    }
-
-    setIsGenerating(true);
-    const beforeTokens = estimateHistoryTokens(current, settings.systemPrompt);
-
+  const compact = async () => {
+    if (operation.current) return;
+    const op = { id: crypto.randomUUID(), controller: new AbortController() }; operation.current = op; setGenerating(true);
     try {
-      const summary = await LLMClient.summarizeHistory(settings, current);
-
-      const compressionCard: ChatMessage = {
-        id: `comp_${Date.now()}`,
-        role: 'system',
-        content: summary,
-        summaryText: summary,
-        timestamp: Date.now(),
-        isCompressionCard: true,
-        compressedCount: uncompressed.length,
-        tokensSaved: Math.max(0, beforeTokens - estimateTokens(summary)),
-      };
-
-      const updated = [compressionCard];
-      setMessages(updated);
-
-      if (settings.saveSessionHistory) {
-        saveSingleSession({
-          id: currentSessionId,
-          title: current[0]?.content?.slice(0, 36) || 'Сжатый диалог',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          messages: updated,
-        }).then(() => {
-          getChatSessions().then(setSessions);
-        });
-      }
-    } catch (err: any) {
-      console.error('Failed to compress context:', err);
-    } finally {
-      setIsGenerating(false);
-    }
+      const value = await compactSession(settingsRef.current, sessionRef.current, op.controller.signal, 0);
+      if (operation.current === op) update(value, true);
+    } catch (err: any) { if (operation.current === op) setNotice(op.controller.signal.aborted ? tr('Сжатие остановлено, история сохранена.', 'Compression stopped; history preserved.') : err.message); }
+    finally { if (operation.current === op) { operation.current = undefined; setGenerating(false); } }
   };
 
-  // Slash commands executor
-  const handleExecuteCommand = async (cmdStr: string) => {
-    const trimmed = cmdStr.trim();
-    const [command] = trimmed.split(' ');
-
-    switch (command.toLowerCase()) {
-      case '/compact':
-        await performCompression();
-        break;
-
-      case '/clear':
-        handleClearChat();
-        break;
-
-      case '/new':
-        handleNewChat();
-        break;
-
-      case '/settings':
-        setSettingsTab('general');
-        setIsSettingsOpen(true);
-        break;
-
-      case '/model':
-        setSettingsTab('models');
-        setIsSettingsOpen(true);
-        break;
-
-      case '/help': {
-        const helpText = `**Доступные команды Browser Agent:**
-- \`/compact\` — сжать историю диалога и освободить контекст
-- \`/clear\` — очистить сообщения текущего диалога
-- \`/new\` — начать новый чистый диалог
-- \`/settings\` — открыть окно настроек
-- \`/help\` — показать эту справку`;
-
-        const helpMsg: ChatMessage = {
-          id: `ast_${Date.now()}`,
-          role: 'assistant',
-          content: helpText,
-          timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, helpMsg]);
-        break;
-      }
-
-      default: {
-        const unknownMsg: ChatMessage = {
-          id: `ast_${Date.now()}`,
-          role: 'assistant',
-          content: `⚠️ Неизвестная команда \`${command}\`. Введите \`/help\` для списка доступных команд.`,
-          timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, unknownMsg]);
-        break;
-      }
-    }
-  };
-
-  // Agent execution loop
-  const handleSendMessage = async (text: string) => {
-    const userMsg: ChatMessage = {
-      id: `usr_${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-    };
-
-    if (!settings.apiKey || !settings.model) {
-      const notConfiguredMsg: ChatMessage = {
-        id: `ast_${Date.now() + 1}`,
-        role: 'assistant',
-        content: `**${t('not_configured_title')}**\n\n${t('not_configured_desc')}`,
-        timestamp: Date.now() + 1,
-      };
-
-      setMessages((prev) => [...prev, userMsg, notConfiguredMsg]);
-      return;
-    }
-
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setIsGenerating(true);
-
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
+  const send = async (text: string) => {
+    if (!ready || operation.current) return;
+    void unlockAudio(); setNotice('');
+    const current = sessionRef.current;
+    const first = !current.messages.some(m => m.role === 'user');
+    const initial: ChatSession = { ...current, title: first ? text.slice(0, 60) : current.title,
+      messages: [...current.messages, { id: crypto.randomUUID(), role: 'user', content: text, timestamp: Date.now() }] };
+    update(initial, true);
+    const op = { id: crypto.randomUUID(), controller: new AbortController() }; operation.current = op; setGenerating(true);
+    let targetId = activeTab?.id, targetUrl = activeTab?.url || '';
     try {
-      const finalHistory = await runAgentLoop(newMessages, abortController.signal, 0);
-
-      // Auto-compress when context tokens reach maximum capacity
-      if (finalHistory && !abortController.signal.aborted) {
-        const tokensAfter = estimateHistoryTokens(finalHistory, settings.systemPrompt);
-        if (tokensAfter >= settings.maxContextTokens && finalHistory.length >= 3) {
-          await performCompression(finalHistory);
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        const errorMsg: ChatMessage = {
-          id: `err_${Date.now()}`,
-          role: 'assistant',
-          content: `⚠️ **Ошибка**: ${err.message || 'Не удалось выполнить запрос.'}`,
-          timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, errorMsg]);
-      }
-    } finally {
-      setIsGenerating(false);
-      abortControllerRef.current = null;
-    }
-  };
-
-  const runAgentLoop = async (
-    currentHistory: ChatMessage[],
-    signal: AbortSignal,
-    stepCount: number
-  ): Promise<ChatMessage[]> => {
-    if (stepCount > 8) return currentHistory;
-
-    const assistantMsgId = `ast_${Date.now()}`;
-    const initialAssistantMsg: ChatMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      isStreaming: true,
-    };
-
-    setMessages([...currentHistory, initialAssistantMsg]);
-
-    const result = await LLMClient.chat(
-      settings,
-      currentHistory,
-      {
-        onChunk: (chunkText) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId ? { ...m, content: chunkText } : m
-            )
-          );
-        },
-      },
-      signal
-    );
-
-    const completedMsg: ChatMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: result.content,
-      timestamp: Date.now(),
-      isStreaming: false,
-      toolCalls: result.toolCalls,
-    };
-
-    const updatedHistory = [...currentHistory, completedMsg];
-    setMessages(updatedHistory);
-
-    // If agent requested tool execution
-    if (result.toolCalls && result.toolCalls.length > 0) {
-      const executedToolCalls: ToolCallRecord[] = [];
-
-      for (const tc of result.toolCalls) {
-        if (signal.aborted) break;
-
-        tc.status = 'running';
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? {
-                  ...m,
-                  toolCalls: m.toolCalls?.map((t) => (t.id === tc.id ? { ...t, status: 'running' } : t)),
-                }
-              : m
-          )
-        );
-
-        if (tc.args?.selector && activeTab?.id) {
-          chrome.tabs.sendMessage(activeTab.id, {
-            action: 'HIGHLIGHT_ELEMENT',
-            selector: tc.args.selector,
-          }).catch(() => {});
-        }
-
-        try {
-          const toolRes = await executeDevToolsAction(tc.name, tc.args);
-          tc.status = 'success';
-          tc.result = toolRes;
-        } catch (err: any) {
-          tc.status = 'error';
-          tc.error = err.message || 'Ошибка выполнения действия';
-        }
-
-        executedToolCalls.push(tc);
-
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? {
-                  ...m,
-                  toolCalls: m.toolCalls?.map((t) => (t.id === tc.id ? { ...tc } : t)),
-                }
-              : m
-          )
-        );
-      }
-
-      if (!signal.aborted) {
-        const nextHistory = updatedHistory.map((m) =>
-          m.id === assistantMsgId ? { ...m, toolCalls: executedToolCalls } : m
-        );
-        return await runAgentLoop(nextHistory, signal, stepCount + 1);
-      }
-    }
-
-    return updatedHistory;
-  };
-
-  const executeDevToolsAction = (toolName: string, args: any): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      if (!activeTab?.id) {
-        reject(new Error('Нет активной вкладки браузера для выполнения действия.'));
-        return;
-      }
-
-      chrome.runtime.sendMessage(
-        {
-          action: 'EXECUTE_DEVTOOLS_TOOL',
-          payload: {
-            tabId: activeTab.id,
-            toolName,
-            args,
-          },
-        },
-        (res) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else if (res?.success) {
-            fetchActiveTab();
-            resolve(res.result);
-          } else {
-            reject(new Error(res?.error || 'Неизвестная ошибка DevTools'));
+      const finished = await runAgent(settingsRef.current, initial, op.controller.signal, {
+        update: value => { if (operation.current === op) update(value); },
+        chunk: value => { if (operation.current === op) update(value); },
+        execute: async (call, profile) => {
+          const response = await runtime({ action: 'EXECUTE_DEVTOOLS_TOOL', payload: { tabId: activeTab?.id, toolName: call.name,
+            args: { ...call.args, profile: call.args.profile || profile }, runId: op.id, sessionId: initial.id,
+            history: call.name === 'history_read' ? sessionRef.current.messages : undefined } });
+          if (response.result.ok) {
+            if (response.result.data?.selectedTabId != null) { targetId = response.result.data.selectedTabId; targetUrl = response.result.data.url || ''; }
+            if (call.name === 'devtools_navigate') targetUrl = response.result.data?.url || targetUrl;
           }
-        }
-      );
-    });
+          return response.result;
+        },
+        browserState: () => { const current = activeTabRef.current; return JSON.stringify({ tabId: targetId, url: cleanUrl(current && current.id === targetId ? current.url : targetUrl) }); },
+      }, typeof chrome !== 'undefined' && Boolean(chrome.debugger));
+      if (operation.current === op) {
+        update(finished, true);
+        if (!op.controller.signal.aborted && settingsRef.current.soundEnabled) void playCompletion(settingsRef.current.soundVolume);
+      }
+    } finally {
+      void runtime({ action: 'RELEASE_RUN', runId: op.id }).catch(() => {});
+      if (operation.current === op) { operation.current = undefined; setGenerating(false); void refreshTab(); }
+    }
   };
 
-  const usedTokens = estimateHistoryTokens(messages, settings.systemPrompt);
-
-  return (
-    <div className="flex flex-col h-screen w-screen bg-agent-bg text-agent-text overflow-hidden select-text">
-      {/* Top Header */}
-      <Header
-        activeTab={activeTab}
-        onOpenSettings={() => {
-          setSettingsTab('general');
-          setIsSettingsOpen(true);
-        }}
-        onOpenHistory={() => setIsHistoryOpen(true)}
-        onNewChat={handleNewChat}
-        onClearChat={handleClearChat}
-        onToggleAttachDebugger={handleToggleAttachDebugger}
-      />
-
-      {/* Messages List */}
-      <MessageList
-        messages={messages}
-        isGenerating={isGenerating}
-        onOpenSettings={() => {
-          setSettingsTab('models');
-          setIsSettingsOpen(true);
-        }}
-        onRollback={handleRollback}
-      />
-
-      {/* Message Input Container */}
-      <MessageInput
-        onSendMessage={handleSendMessage}
-        onStop={handleStop}
-        isGenerating={isGenerating}
-        initialText={restoredInputText}
-        onTextConsumed={() => setRestoredInputText('')}
-        onExecuteCommand={handleExecuteCommand}
-      />
-
-      {/* OpenCode-style Model Selector Bar with Context Gauge */}
-      <ModelSelectorBar
-        settings={settings}
-        onOpenModelSettings={() => {
-          setSettingsTab('models');
-          setIsSettingsOpen(true);
-        }}
-        onSelectModel={(model: string) => {
-          const updated = { ...settings, model };
-          handleSaveSettings(updated);
-        }}
-        onTriggerCompact={() => performCompression()}
-        usedTokens={usedTokens}
-        messageCount={messages.length}
-      />
-
-      {/* Settings Modal */}
-      <SettingsModal
-        settings={settings}
-        isOpen={isSettingsOpen}
-        initialTab={settingsTab}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={handleSaveSettings}
-      />
-
-      {/* Sessions History Drawer */}
-      <SessionsDrawer
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        sessions={sessions}
-        currentSessionId={currentSessionId}
-        onSelectSession={handleSelectSession}
-        onNewChat={handleNewChat}
-        onDeleteSession={handleDeleteSession}
-      />
-    </div>
-  );
+  const command = (value: string) => {
+    switch (value.trim().toLowerCase()) {
+      case '/compact': void compact(); break;
+      case '/new': changeSession(newSession()); break;
+      case '/clear': cancel(true); update({ ...sessionRef.current, messages: [], summary: undefined, updatedAt: Date.now() }, true); break;
+      case '/settings': openSettings('interface'); break;
+      case '/model': openSettings('models'); break;
+      case '/tools': openSettings('tools'); break;
+      case '/help': setNotice(SLASH_COMMANDS.map(c => `${c.command} — ${tr(c.ru, c.en)}`).join('\n')); break;
+      default: setNotice(tr('Неизвестная команда. Введите /help.', 'Unknown command. Enter /help.'));
+    }
+  };
+  const costs = contextCosts(settings, session, { hasBrowser: typeof chrome !== 'undefined' && Boolean(chrome.debugger) });
+  return <div className="app-shell">
+    <Header activeTab={activeTab} onOpenSettings={() => openSettings('models')} onOpenHistory={() => setHistoryOpen(true)}
+      onNewChat={() => changeSession(newSession())} onClearChat={() => command('/clear')}
+      onToggleAttachDebugger={() => { if (activeTab) void runtime({ action: activeTab.isAttached ? 'DETACH_DEBUGGER' : 'ATTACH_DEBUGGER', payload: { tabId: activeTab.id } }).then(refreshTab).catch(err => setNotice(err.message)); }} />
+    {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label={tr('Закрыть уведомление', 'Dismiss notice')} onClick={() => setNotice('')}>×</button></div>}
+    <MessageList messages={session.messages} sessionId={session.id} isGenerating={isGenerating} onOpenSettings={() => openSettings('models')}
+      onRollback={(index, content) => {
+        cancel(true); const current = sessionRef.current; const remaining = current.messages.slice(0, index);
+        update({ ...current, messages: remaining, summary: summaryForRollback(current.summary, remaining), updatedAt: Date.now() }, true); setInput(content);
+      }} />
+    <MessageInput onSendMessage={text => { void send(text).catch(err => { setNotice(err.message); }); }} onStop={() => cancel()} isGenerating={isGenerating}
+      disabled={!ready} initialText={input} onTextConsumed={() => setInput('')} onExecuteCommand={command} />
+    <ModelSelectorBar settings={settings} usedTokens={costs.total} messageCount={logicalMessageCount(session.messages)}
+      costs={costs} toolCosts={contextToolCosts(session)} busy={isGenerating} onTriggerCompact={() => { void compact(); }} onOpenModelSettings={() => openSettings('models')}
+      onSelectModel={model => { void save({ ...settings, model }).catch(err => setNotice(err.message)); }} />
+    <SettingsModal isOpen={settingsOpen} settings={settings} initialTab={settingsTab} onSave={save} onClose={() => setSettingsOpen(false)} />
+    <SessionsDrawer isOpen={historyOpen} onClose={() => setHistoryOpen(false)} sessions={sessions} currentSessionId={session.id}
+      onSelectSession={selected => {
+        const version = ++switchVersion.current; cancel(true); setReady(false);
+        void saveQueue.current.then(() => getChatSession(selected.id)).then(value => { if (switchVersion.current === version) changeSession(value); })
+          .catch(err => setNotice(err.message)).finally(() => setReady(true));
+      }} onNewChat={() => changeSession(newSession())} onDeleteSession={id => {
+        if (sessionRef.current.id === id) changeSession(newSession());
+        void saveQueue.current.then(() => deleteChatSession(id)).then(refreshSessions).catch(err => setNotice(err.message));
+      }} />
+  </div>;
 };

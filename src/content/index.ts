@@ -1,381 +1,97 @@
-// Browser Agent Content Script
-// Injects floating draggable chat widget with Drop-to-Close zone and particle explosion
-
-console.log('[Browser Agent] Content script initialized on:', window.location.href);
-
-let highlightOverlay: HTMLDivElement | null = null;
-
-function getOrCreateOverlay(): HTMLDivElement {
-  if (highlightOverlay && document.body.contains(highlightOverlay)) {
-    return highlightOverlay;
+// Keep this entry self-contained: Chromium loads it as a classic content script.
+(() => {
+  let host: HTMLDivElement | undefined;
+  let removeWidget = () => {};
+  let hidden = false, enabled = true, revision = 0;
+  function valid() {
+    try { return typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id); } catch { return false; }
   }
-  highlightOverlay = document.createElement('div');
-  highlightOverlay.id = '__browser_agent_highlighter__';
-  highlightOverlay.style.position = 'fixed';
-  highlightOverlay.style.pointerEvents = 'none';
-  highlightOverlay.style.zIndex = '2147483647';
-  highlightOverlay.style.border = '2px solid #3794ff'; // Neutral browser blue
-  highlightOverlay.style.backgroundColor = 'rgba(55, 148, 255, 0.15)';
-  highlightOverlay.style.borderRadius = '4px';
-  highlightOverlay.style.transition = 'all 0.15s ease-in-out';
-  highlightOverlay.style.display = 'none';
-  document.body.appendChild(highlightOverlay);
-  return highlightOverlay;
-}
-
-function injectFloatingAgentWidget() {
-  if (document.getElementById('__browser_agent_root__')) return;
-  if (sessionStorage.getItem('browser_agent_hidden') === 'true') return;
-
-  const host = document.createElement('div');
-  host.id = '__browser_agent_root__';
-  host.style.all = 'initial';
-  document.documentElement.appendChild(host);
-
-  const shadow = host.attachShadow({ mode: 'open' });
-
-  const style = document.createElement('style');
-  style.textContent = `
-    .agent-btn {
-      position: fixed;
-      right: 20px;
-      bottom: 60px;
-      z-index: 2147483646;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: #1e1e1e;
-      border: 1.5px solid #383838;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), 0 0 10px rgba(55, 148, 255, 0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, border-color 0.2s ease;
-      touch-action: none;
+  async function message(payload: any) {
+    if (!valid()) { removeWidget(); return; }
+    try { return await chrome.runtime.sendMessage(payload); }
+    catch (err: any) {
+      if (!valid() || /extension context invalidated/i.test(err?.message || '')) removeWidget();
+      else console.warn('[Browser Agent]', err?.message || 'Message failed');
     }
-    .agent-btn:hover {
-      transform: scale(1.08);
-      border-color: #3794ff;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(55, 148, 255, 0.4);
-    }
-    .agent-btn:active {
-      transform: scale(0.96);
-    }
-    .agent-icon {
-      width: 22px;
-      height: 22px;
-      color: #cccccc;
-      transition: color 0.2s ease;
-    }
-    .agent-btn:hover .agent-icon {
-      color: #3794ff;
-    }
-    .agent-tooltip {
-      position: absolute;
-      right: 54px;
-      background: #252526;
-      color: #cccccc;
-      border: 1px solid #383838;
-      border-radius: 6px;
-      padding: 5px 9px;
-      font-size: 11px;
-      font-weight: 500;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transform: translateX(6px);
-      transition: opacity 0.15s ease, transform 0.15s ease;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .agent-tooltip kbd {
-      background: #1e1e1e;
-      border: 1px solid #444;
-      border-radius: 3px;
-      padding: 1px 4px;
-      font-size: 10px;
-      color: #3794ff;
-      font-family: monospace;
-    }
-    .agent-btn:hover .agent-tooltip {
-      opacity: 1;
-      transform: translateX(0);
-    }
-
-    /* Drop-to-Close Target Zone matching Browser Agent theme */
-    #agent-drop-close {
-      position: fixed;
-      top: 85%;
-      left: 50%;
-      transform: translate(-50%, -50%) scale(0.7);
-      width: 76px;
-      height: 76px;
-      border-radius: 50%;
-      background: rgba(30, 30, 30, 0.92);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1.5px dashed rgba(55, 148, 255, 0.5);
-      z-index: 2147483647;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #cccccc;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s, transform 0.2s, border-color 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 16px rgba(55, 148, 255, 0.15);
-    }
-    #agent-drop-close.visible {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
-    }
-    #agent-drop-close.active {
-      border-color: #3794ff;
-      border-style: solid;
-      background: rgba(55, 148, 255, 0.2);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 30px rgba(55, 148, 255, 0.55);
-      transform: translate(-50%, -50%) scale(1.15);
-      color: #ffffff;
-    }
-
-    /* Particle Explosion */
-    .agent-particle {
-      position: fixed;
-      z-index: 2147483647;
-      pointer-events: none;
-      font-family: monospace;
-      font-size: 12px;
-      color: #3794ff;
-      font-weight: 700;
-      text-shadow: 0 0 8px #3794ff;
-      user-select: none;
-      animation: agent-particle-fly 0.65s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
-    }
-    @keyframes agent-particle-fly {
-      0% {
-        opacity: 1;
-        transform: translate(0, 0) scale(1.4) rotate(0deg);
+  }
+  async function inject() {
+    if (!valid() || host || hidden || !enabled) return;
+    const ticket = ++revision;
+    const config = await message({ action: 'GET_WIDGET_SETTINGS' });
+    if (ticket !== revision || !valid() || host || !enabled || !config?.success || !config.enabled || config.hidden) return;
+    const ru = config.language === 'ru';
+    document.getElementById('__browser_agent_root__')?.remove();
+    host = document.createElement('div'); host.id = '__browser_agent_root__';
+    const shadow = host.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = `:host{all:initial}
+      .agent-btn{all:unset;box-sizing:border-box;position:fixed;z-index:2147483646;right:20px;bottom:60px;width:48px;height:48px;display:grid;place-items:center;border-radius:50%;cursor:pointer;touch-action:none;user-select:none;box-shadow:0 4px 14px #0005;transition:transform .15s}
+      .agent-btn:hover{transform:scale(1.06)}.agent-btn:focus-visible{outline:2px solid #8ab4d8;outline-offset:3px}.agent-btn.dragging{transition:none;transform:none;cursor:grabbing}
+      .agent-btn img{display:block;width:100%;height:100%;pointer-events:none;-webkit-user-drag:none}
+      .drop-zone{position:fixed;z-index:2147483647;left:50%;bottom:28px;transform:translateX(-50%) scale(.8);width:76px;height:76px;box-sizing:border-box;border-radius:50%;background:#242528ed;border:1px dashed #8697a8;color:#d7e0e8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:10px/1 system-ui,sans-serif;pointer-events:none;opacity:0;transition:opacity .12s,transform .12s,background .12s}
+      .drop-zone.visible{opacity:1;transform:translateX(-50%) scale(1)}.drop-zone.active{background:#344b61;border-color:#a9c6df;border-style:solid}.drop-zone svg{width:24px;height:24px;flex:none}
+      @media(prefers-reduced-motion:reduce){.agent-btn,.drop-zone{transition:none}}`;
+    const open = document.createElement('button');
+    open.type = 'button'; open.className = 'agent-btn';
+    open.title = ru ? 'Browser Agent · Alt+C. Перетащите в зону закрытия, чтобы скрыть.' : 'Browser Agent · Alt+C. Drag to the close target to hide.';
+    open.setAttribute('aria-label', ru ? 'Открыть Browser Agent' : 'Open Browser Agent');
+    const icon = document.createElement('img'); icon.src = chrome.runtime.getURL('icons/logo.svg'); icon.alt = ''; icon.draggable = false;
+    open.append(icon);
+    const drop = document.createElement('div'); drop.className = 'drop-zone'; drop.setAttribute('aria-hidden', 'true');
+    drop.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m6 6 12 12M18 6 6 18"/></svg>';
+    const label = document.createElement('span'); label.textContent = ru ? 'Закрыть' : 'Close'; drop.append(label);
+    let dragging = false, moved = false, inTarget = false, startX = 0, startY = 0, left = 0, top = 0;
+    const stop = () => {
+      dragging = false; open.classList.remove('dragging'); drop.classList.remove('visible', 'active');
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('blur', stop);
+    };
+    const place = (x: number, y: number) => {
+      open.style.left = `${Math.max(4, Math.min(innerWidth - 52, x))}px`; open.style.top = `${Math.max(4, Math.min(innerHeight - 52, y))}px`;
+      open.style.right = 'auto'; open.style.bottom = 'auto';
+    };
+    const resize = () => { if (open.style.left) { const rect = open.getBoundingClientRect(); place(rect.left, rect.top); } };
+    removeWidget = () => { stop(); window.removeEventListener('resize', resize); host?.remove(); host = undefined; };
+    const hide = () => { hidden = true; removeWidget(); void message({ action: 'HIDE_WIDGET' }); };
+    const move = (event: PointerEvent) => {
+      if (!dragging) return;
+      if (!valid()) { removeWidget(); return; }
+      const dx = event.clientX - startX, dy = event.clientY - startY;
+      if (Math.hypot(dx, dy) > 6) moved = true;
+      if (moved) {
+        event.preventDefault(); open.classList.add('dragging'); drop.classList.add('visible'); place(left + dx, top + dy);
+        const buttonRect = open.getBoundingClientRect(), targetRect = drop.getBoundingClientRect();
+        inTarget = Math.hypot(buttonRect.left + 24 - targetRect.left - targetRect.width / 2, buttonRect.top + 24 - targetRect.top - targetRect.height / 2) < 58;
+        drop.classList.toggle('active', inTarget);
       }
-      100% {
-        opacity: 0;
-        transform: translate(var(--dx), var(--dy)) scale(0.2) rotate(360deg);
+    };
+    const up = (event: PointerEvent) => {
+      if (!dragging) return;
+      const dropped = moved && inTarget && event.type !== 'pointercancel'; stop();
+      if (dropped) { hide(); return; }
+      if (moved && event.type !== 'pointercancel') {
+        const rect = open.getBoundingClientRect();
+        void message({ action: 'SET_WIDGET_POSITION', x: rect.left / innerWidth, y: rect.top / innerHeight });
       }
+    };
+    open.addEventListener('pointerdown', event => {
+      if (!valid()) { removeWidget(); return; }
+      if (event.button !== 0) return;
+      const rect = open.getBoundingClientRect(); left = rect.left; top = rect.top; startX = event.clientX; startY = event.clientY;
+      dragging = true; moved = false; inTarget = false;
+      window.addEventListener('pointermove', move, { passive: false }); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); window.addEventListener('blur', stop);
+    });
+    open.addEventListener('click', event => { if (!moved || event.detail === 0) void message({ action: 'OPEN_SIDE_PANEL' }); moved = false; });
+    open.addEventListener('keydown', event => { if (event.key === 'Delete') { event.preventDefault(); hide(); } });
+    shadow.append(style, drop, open); document.documentElement.append(host);
+    if (config.position) place(config.position.x * innerWidth, config.position.y * innerHeight);
+    window.addEventListener('resize', resize);
+  }
+  if (valid()) chrome.runtime.onMessage.addListener((payload, _sender, respond) => {
+    if (payload.action === 'WIDGET_VISIBILITY') {
+      revision++; enabled = payload.enabled; removeWidget(); hidden = false;
+      if (enabled) void inject();
+      respond({ success: true });
     }
-  `;
-
-  // Drop Target Element
-  const dropTarget = document.createElement('div');
-  dropTarget.id = 'agent-drop-close';
-  dropTarget.innerHTML = `
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="18" y1="6" x2="6" y2="18"/>
-      <line x1="6" y1="6" x2="18" y2="18"/>
-    </svg>
-    <span style="font-size:9px;margin-top:2px;font-weight:600;letter-spacing:0.5px">ЗАКРЫТЬ</span>
-  `;
-
-  // Floating Button Element
-  const btn = document.createElement('div');
-  btn.className = 'agent-btn';
-  btn.title = 'Browser Agent';
-
-  // SVG Chat Bubble Icon
-  btn.innerHTML = `
-    <div class="agent-tooltip">
-      <span>Browser Agent</span>
-      <kbd>Alt+C</kbd>
-    </div>
-    <svg class="agent-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-    </svg>
-  `;
-
-  // Particle explosion effect
-  function triggerParticleExplosion(x: number, y: number) {
-    const chars = ['0', '1', '>', '#', '*', '⚡', '{', '}', ';', '●', '▲'];
-    for (let i = 0; i < 30; i++) {
-      const p = document.createElement('span');
-      p.className = 'agent-particle';
-      p.textContent = chars[Math.floor(Math.random() * chars.length)];
-
-      const angle = Math.random() * Math.PI * 2;
-      const distance = 40 + Math.random() * 110;
-      const dx = Math.cos(angle) * distance;
-      const dy = Math.sin(angle) * distance;
-
-      p.style.left = `${x}px`;
-      p.style.top = `${y}px`;
-      p.style.setProperty('--dx', `${dx}px`);
-      p.style.setProperty('--dy', `${dy}px`);
-      p.style.animationDelay = `${Math.random() * 0.08}s`;
-
-      shadow.appendChild(p);
-
-      setTimeout(() => {
-        if (p.parentNode) p.parentNode.removeChild(p);
-      }, 750);
-    }
-  }
-
-  // Restore saved position if available
-  const savedPos = localStorage.getItem('browser_agent_btn_pos') || localStorage.getItem('chromium_agent_btn_pos');
-  if (savedPos) {
-    try {
-      const parsed = JSON.parse(savedPos);
-      if (parsed.left !== undefined && parsed.top !== undefined) {
-        btn.style.left = `${Math.max(10, Math.min(window.innerWidth - 60, parsed.left))}px`;
-        btn.style.top = `${Math.max(10, Math.min(window.innerHeight - 60, parsed.top))}px`;
-        btn.style.right = 'auto';
-        btn.style.bottom = 'auto';
-      }
-    } catch {}
-  }
-
-  // Full 2D Dragging & Drop-to-Close
-  let isDragging = false;
-  let startX = 0;
-  let startY = 0;
-  let initialLeft = 0;
-  let initialTop = 0;
-  let hasMoved = false;
-
-  function onPointerDown(e: MouseEvent | TouchEvent) {
-    if (e.type === 'mousedown' && (e as MouseEvent).button !== 0) return;
-    const pointer = 'touches' in e ? e.touches[0] : (e as MouseEvent);
-    startX = pointer.clientX;
-    startY = pointer.clientY;
-
-    const rect = btn.getBoundingClientRect();
-    initialLeft = rect.left;
-    initialTop = rect.top;
-    hasMoved = false;
-    isDragging = true;
-
-    window.addEventListener('mousemove', onPointerMove, { passive: false });
-    window.addEventListener('mouseup', onPointerUp);
-    window.addEventListener('touchmove', onPointerMove, { passive: false });
-    window.addEventListener('touchend', onPointerUp);
-    window.addEventListener('touchcancel', onPointerUp);
-  }
-
-  function onPointerMove(e: MouseEvent | TouchEvent) {
-    if (!isDragging) return;
-    const pointer = 'touches' in e ? e.touches[0] : (e as MouseEvent);
-    const dx = pointer.clientX - startX;
-    const dy = pointer.clientY - startY;
-
-    if (Math.hypot(dx, dy) > 6) {
-      hasMoved = true;
-      if (e.cancelable) e.preventDefault();
-      dropTarget.classList.add('visible');
-
-      const newLeft = Math.max(10, Math.min(window.innerWidth - 54, initialLeft + dx));
-      const newTop = Math.max(10, Math.min(window.innerHeight - 54, initialTop + dy));
-
-      btn.style.left = `${newLeft}px`;
-      btn.style.top = `${newTop}px`;
-      btn.style.right = 'auto';
-      btn.style.bottom = 'auto';
-
-      const btnCenterX = newLeft + 22;
-      const btnCenterY = newTop + 22;
-      const targetCenterX = window.innerWidth / 2;
-      const targetCenterY = window.innerHeight * 0.85;
-
-      const dist = Math.hypot(btnCenterX - targetCenterX, btnCenterY - targetCenterY);
-      if (dist < 80) {
-        dropTarget.classList.add('active');
-      } else {
-        dropTarget.classList.remove('active');
-      }
-    }
-  }
-
-  function onPointerUp() {
-    if (!isDragging) return;
-    isDragging = false;
-
-    window.removeEventListener('mousemove', onPointerMove);
-    window.removeEventListener('mouseup', onPointerUp);
-    window.removeEventListener('touchmove', onPointerMove);
-    window.removeEventListener('touchend', onPointerUp);
-    window.removeEventListener('touchcancel', onPointerUp);
-
-    const isDropped = dropTarget.classList.contains('active');
-    dropTarget.classList.remove('visible', 'active');
-
-    if (isDropped) {
-      const rect = btn.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      triggerParticleExplosion(centerX, centerY);
-
-      sessionStorage.setItem('browser_agent_hidden', 'true');
-      btn.style.display = 'none';
-    } else if (hasMoved) {
-      // Save position to localStorage
-      const rect = btn.getBoundingClientRect();
-      localStorage.setItem(
-        'browser_agent_btn_pos',
-        JSON.stringify({ left: Math.round(rect.left), top: Math.round(rect.top) })
-      );
-    } else {
-      // Simple click without movement: open side panel!
-      chrome.runtime.sendMessage({ action: 'OPEN_SIDE_PANEL' });
-    }
-  }
-
-  btn.addEventListener('mousedown', onPointerDown);
-  btn.addEventListener('touchstart', onPointerDown, { passive: true });
-
-  shadow.appendChild(style);
-  shadow.appendChild(dropTarget);
-  shadow.appendChild(btn);
-}
-
-// Inject widget
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', injectFloatingAgentWidget);
-} else {
-  injectFloatingAgentWidget();
-}
-
-// Extension message listener for element highlighting
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action === 'HIGHLIGHT_ELEMENT' && message.selector) {
-    try {
-      const el = document.querySelector(message.selector);
-      if (!el) {
-        sendResponse({ success: false, error: 'Element not found' });
-        return;
-      }
-
-      const rect = el.getBoundingClientRect();
-      const overlay = getOrCreateOverlay();
-      overlay.style.top = `${rect.top}px`;
-      overlay.style.left = `${rect.left}px`;
-      overlay.style.width = `${rect.width}px`;
-      overlay.style.height = `${rect.height}px`;
-      overlay.style.display = 'block';
-
-      setTimeout(() => {
-        if (overlay) overlay.style.display = 'none';
-      }, 2500);
-
-      sendResponse({ success: true });
-    } catch (err: any) {
-      sendResponse({ success: false, error: err.message });
-    }
-  }
-
-  if (message.action === 'PING') {
-    sendResponse({ success: true, url: window.location.href, title: document.title });
-  }
-});
+  });
+  void inject();
+})();
