@@ -60,6 +60,12 @@
 
 ## Installation
 
+### Quick install (no build)
+
+1. Download `browser-agent-1.0.0.zip` from the [latest release](https://github.com/Matvel007/browser-agent/releases/latest).
+2. Unzip it into a folder you will keep (the extension runs from this folder).
+3. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select that folder.
+
 ### From source
 
 ```bash
