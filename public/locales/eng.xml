@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <translations>
   <!-- Header -->
-  <app_title>Chromium Agent</app_title>
+  <app_title>Browser Agent</app_title>
   <cdp_connected>CDP connected</cdp_connected>
   <cdp_disconnected>CDP disconnected</cdp_disconnected>
   <clear_chat>Clear current chat</clear_chat>
@@ -59,7 +59,7 @@
   <messages_count>messages: {count}</messages_count>
 
   <!-- Settings Modal -->
-  <settings_title>Chromium Agent Settings</settings_title>
+  <settings_title>Browser Agent Settings</settings_title>
   <tab_general>General</tab_general>
   <tab_models>Provider &amp; Models</tab_models>
   <tab_context>Context &amp; Memory</tab_context>
@@ -91,6 +91,6 @@
   <saved_success>Saved</saved_success>
 
   <!-- Floating Widget -->
-  <widget_tooltip>Chromium Agent (Alt+C)</widget_tooltip>
+  <widget_tooltip>Browser Agent (Alt+C)</widget_tooltip>
   <widget_drop_close>CLOSE</widget_drop_close>
 </translations>

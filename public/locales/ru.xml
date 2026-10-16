@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <translations>
   <!-- Header -->
-  <app_title>Chromium Agent</app_title>
+  <app_title>Browser Agent</app_title>
   <cdp_connected>CDP подключен</cdp_connected>
   <cdp_disconnected>CDP отключен</cdp_disconnected>
   <clear_chat>Очистить текущий диалог</clear_chat>
@@ -59,7 +59,7 @@
   <messages_count>сообщений: {count}</messages_count>
 
   <!-- Settings Modal -->
-  <settings_title>Настройки Chromium Agent</settings_title>
+  <settings_title>Настройки Browser Agent</settings_title>
   <tab_general>Основные</tab_general>
   <tab_models>Провайдер и модели</tab_models>
   <tab_context>Контекст и память</tab_context>
@@ -91,6 +91,6 @@
   <saved_success>Сохранено</saved_success>
 
   <!-- Floating Widget -->
-  <widget_tooltip>Chromium Agent (Alt+C)</widget_tooltip>
+  <widget_tooltip>Browser Agent (Alt+C)</widget_tooltip>
   <widget_drop_close>ЗАКРЫТЬ</widget_drop_close>
 </translations>

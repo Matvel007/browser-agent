@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Chromium Agent",
+  "name": "Browser Agent",
   "version": "1.0.0",
   "description": "Autonomous AI assistant for Chromium browsers with Chrome DevTools Protocol automation",
   "permissions": [
@@ -23,7 +23,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open Chromium Agent"
+    "default_title": "Open Browser Agent"
   },
   "commands": {
     "_execute_action": {
@@ -31,7 +31,7 @@
         "default": "Alt+C",
         "mac": "Alt+C"
       },
-      "description": "Открыть Chromium Agent"
+      "description": "Открыть Browser Agent"
     }
   },
   "content_scripts": [

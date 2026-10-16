@@ -1,7 +1,7 @@
-// Chromium Agent Content Script
+// Browser Agent Content Script
 // Injects floating draggable chat widget with Drop-to-Close zone and particle explosion
 
-console.log('[Chromium Agent] Content script initialized on:', window.location.href);
+console.log('[Browser Agent] Content script initialized on:', window.location.href);
 
 let highlightOverlay: HTMLDivElement | null = null;
 
@@ -10,7 +10,7 @@ function getOrCreateOverlay(): HTMLDivElement {
     return highlightOverlay;
   }
   highlightOverlay = document.createElement('div');
-  highlightOverlay.id = '__chromium_agent_highlighter__';
+  highlightOverlay.id = '__browser_agent_highlighter__';
   highlightOverlay.style.position = 'fixed';
   highlightOverlay.style.pointerEvents = 'none';
   highlightOverlay.style.zIndex = '2147483647';
@@ -24,11 +24,11 @@ function getOrCreateOverlay(): HTMLDivElement {
 }
 
 function injectFloatingAgentWidget() {
-  if (document.getElementById('__chromium_agent_root__')) return;
-  if (sessionStorage.getItem('chromium_agent_hidden') === 'true') return;
+  if (document.getElementById('__browser_agent_root__')) return;
+  if (sessionStorage.getItem('browser_agent_hidden') === 'true') return;
 
   const host = document.createElement('div');
-  host.id = '__chromium_agent_root__';
+  host.id = '__browser_agent_root__';
   host.style.all = 'initial';
   document.documentElement.appendChild(host);
 
@@ -181,12 +181,12 @@ function injectFloatingAgentWidget() {
   // Floating Button Element
   const btn = document.createElement('div');
   btn.className = 'agent-btn';
-  btn.title = 'Chromium Agent';
+  btn.title = 'Browser Agent';
 
   // SVG Chat Bubble Icon
   btn.innerHTML = `
     <div class="agent-tooltip">
-      <span>Chromium Agent</span>
+      <span>Browser Agent</span>
       <kbd>Alt+C</kbd>
     </div>
     <svg class="agent-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -222,7 +222,7 @@ function injectFloatingAgentWidget() {
   }
 
   // Restore saved position if available
-  const savedPos = localStorage.getItem('chromium_agent_btn_pos');
+  const savedPos = localStorage.getItem('browser_agent_btn_pos') || localStorage.getItem('chromium_agent_btn_pos');
   if (savedPos) {
     try {
       const parsed = JSON.parse(savedPos);
@@ -314,13 +314,13 @@ function injectFloatingAgentWidget() {
       const centerY = rect.top + rect.height / 2;
       triggerParticleExplosion(centerX, centerY);
 
-      sessionStorage.setItem('chromium_agent_hidden', 'true');
+      sessionStorage.setItem('browser_agent_hidden', 'true');
       btn.style.display = 'none';
     } else if (hasMoved) {
       // Save position to localStorage
       const rect = btn.getBoundingClientRect();
       localStorage.setItem(
-        'chromium_agent_btn_pos',
+        'browser_agent_btn_pos',
         JSON.stringify({ left: Math.round(rect.left), top: Math.round(rect.top) })
       );
     } else {

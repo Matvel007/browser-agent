@@ -1,5 +1,5 @@
 {
-  "name": "chromium-agent",
+  "name": "browser-agent",
   "version": "1.0.0",
   "description": "Autonomous AI Agent for Chromium browsers with Chrome DevTools Protocol automation",
   "private": true,

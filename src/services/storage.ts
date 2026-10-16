@@ -1,9 +1,11 @@
 import { AppSettings, ChatMessage, ChatSession } from '../types';
 
-const SETTINGS_KEY = 'chromium_agent_settings';
-const SESSIONS_KEY = 'chromium_agent_sessions';
+const SETTINGS_KEY = 'browser_agent_settings';
+const SESSIONS_KEY = 'browser_agent_sessions';
+const LEGACY_SETTINGS_KEY = 'chromium_agent_settings';
+const LEGACY_SESSIONS_KEY = 'chromium_agent_sessions';
 
-export const DEFAULT_SYSTEM_PROMPT = `You are Chromium Agent, a neutral and precise AI browser assistant.
+export const DEFAULT_SYSTEM_PROMPT = `You are Browser Agent, a neutral and precise AI browser assistant.
 You have access to Chrome DevTools Protocol (CDP) tools for page inspection and browser automation.
 
 BEHAVIOR AND ETHICAL GUIDELINES:
@@ -33,8 +35,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export async function getSettings(): Promise<AppSettings> {
   try {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      const data = await chrome.storage.local.get(SETTINGS_KEY);
-      return { ...DEFAULT_SETTINGS, ...(data[SETTINGS_KEY] || {}) };
+      const data = await chrome.storage.local.get([SETTINGS_KEY, LEGACY_SETTINGS_KEY]);
+      const loaded = data[SETTINGS_KEY] || data[LEGACY_SETTINGS_KEY];
+      return { ...DEFAULT_SETTINGS, ...(loaded || {}) };
     }
   } catch (err) {
     console.warn('Failed to load settings from storage:', err);
@@ -57,8 +60,8 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
 export async function getChatSessions(): Promise<ChatSession[]> {
   try {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      const data = await chrome.storage.local.get(SESSIONS_KEY);
-      return data[SESSIONS_KEY] || [];
+      const data = await chrome.storage.local.get([SESSIONS_KEY, LEGACY_SESSIONS_KEY]);
+      return data[SESSIONS_KEY] || data[LEGACY_SESSIONS_KEY] || [];
     }
   } catch (err) {
     console.warn('Failed to load sessions:', err);
