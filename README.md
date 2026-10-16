@@ -16,6 +16,17 @@
 
 </div>
 
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center"><b>Main</b><br><img src="docs/main.png" alt="Main chat panel" width="300" /></td>
+    <td align="center"><b>Settings</b><br><img src="docs/settings.png" alt="Settings" width="300" /></td>
+  </tr>
+</table>
+
+</div>
+
 ---
 
 ## Overview

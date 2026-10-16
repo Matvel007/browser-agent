@@ -16,6 +16,17 @@
 
 </div>
 
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center"><b>Главный экран</b><br><img src="docs/main.png" alt="Главная панель чата" width="300" /></td>
+    <td align="center"><b>Настройки</b><br><img src="docs/settings.png" alt="Настройки" width="300" /></td>
+  </tr>
+</table>
+
+</div>
+
 ---
 
 ## Обзор
