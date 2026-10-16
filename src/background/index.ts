@@ -2,15 +2,51 @@ import { devtools } from '../services/devtools';
 
 console.log('[Background] DevTools AI Copilot service worker initialized.');
 
-// Configure Chrome Side Panel to open when user clicks the extension toolbar icon
-chrome.runtime.onInstalled.addListener(() => {
+// Configure Chrome Side Panel behavior and auto-open on install/reload
+chrome.runtime.onInstalled.addListener(async () => {
   if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-      .catch((err) => console.warn('Could not set sidePanel behavior:', err));
+    try {
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    } catch (err) {
+      console.warn('Could not set sidePanel behavior:', err);
+    }
+  }
+
+  // Create context menu item on right-click anywhere on page
+  if (chrome.contextMenus) {
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: 'open_devtools_copilot',
+        title: '🤖 Открыть DevTools AI Copilot',
+        contexts: ['page', 'selection', 'link', 'editable'],
+      });
+    });
+  }
+
+  // Automatically open the Side Panel immediately upon installation / update!
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs[0];
+    if (activeTab?.windowId && chrome.sidePanel && chrome.sidePanel.open) {
+      await chrome.sidePanel.open({ windowId: activeTab.windowId });
+    }
+  } catch (err) {
+    console.warn('Auto-open side panel failed (will open on click or Alt+C):', err);
   }
 });
 
-// Also open side panel on action click if setPanelBehavior is not supported
+// Handle right-click context menu
+chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'open_devtools_copilot' && tab?.windowId && chrome.sidePanel) {
+    try {
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+    } catch (err) {
+      console.warn('Failed to open sidePanel from context menu:', err);
+    }
+  }
+});
+
+// Also open side panel on action click
 chrome.action.onClicked.addListener(async (tab) => {
   if (tab.windowId && chrome.sidePanel && chrome.sidePanel.open) {
     try {
