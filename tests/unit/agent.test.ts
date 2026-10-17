@@ -72,4 +72,16 @@ describe('history and agent lifecycle', () => {
     const custom = 'You are Browser Agent, a neutral and precise AI browser assistant.\nMy custom instructions.';
     expect(migrateSettings({ systemPrompt: custom }).systemPrompt).toBe(custom);
   });
+  it('allows steps beyond maxSteps when maxStepsEnabled is false', async () => {
+    const noLimitSettings = { ...settings, maxSteps: 1, maxStepsEnabled: false };
+    const chat = vi.spyOn(LLMClient, 'chat')
+      .mockResolvedValueOnce({ ...result(''), toolCalls: [{ id: 'c1', name: 'devtools_get_page_summary', args: {}, status: 'pending', timestamp: 2 }] })
+      .mockResolvedValueOnce({ ...result(''), toolCalls: [{ id: 'c2', name: 'devtools_get_page_summary', args: {}, status: 'pending', timestamp: 3 }] })
+      .mockResolvedValueOnce(result('All done without step limit.'));
+    const execute = vi.fn().mockResolvedValue(envelope({ ok: true }));
+    const session = await runAgent(noLimitSettings, initial(), new AbortController().signal, { update() {}, chunk() {}, execute, settings: async () => noLimitSettings }, true);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(session.messages.at(-1)?.content).toBe('All done without step limit.');
+    expect(session.messages.at(-1)?.status).toBe('completed');
+  });
 });

@@ -41,6 +41,7 @@ export interface AppSettings {
   searchProvider: 'duckduckgo' | 'tavily';
   tavilyApiKey: string;
   maxSteps: number;
+  maxStepsEnabled: boolean;
   maxOutputTokens: number;
   supportsVision: boolean;
   soundEnabled: boolean;

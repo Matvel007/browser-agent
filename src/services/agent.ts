@@ -38,11 +38,11 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
     if (chunk) hooks.chunk(session); else hooks.update(session);
   };
   try {
-    for (let step = 0; step <= settings.maxSteps + 1; step++) {
+    for (let step = 0; settings.maxStepsEnabled === false || step <= settings.maxSteps + 1; step++) {
       signal.throwIfAborted();
       const live = await (hooks.settings || getSettings)();
       // Provider and model are fixed for this run; tool toggles and output budget are refreshed each step.
-      settings = { ...settings, disabledTools: live.disabledTools, searchEnabled: live.searchEnabled, toolProfile: live.toolProfile };
+      settings = { ...settings, disabledTools: live.disabledTools, searchEnabled: live.searchEnabled, toolProfile: live.toolProfile, maxSteps: live.maxSteps, maxStepsEnabled: live.maxStepsEnabled };
       const browserState = hooks.browserState?.();
       let costs = contextCosts(settings, session, { hasBrowser, images, browserState });
       if (costs.total >= settings.maxContextTokens * ((settings.compressionThreshold || 75) / 100)
@@ -54,8 +54,9 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
         }
       }
       if (costs.total > settings.maxContextTokens) throw new Error(tr('Контекст текущей задачи превышает бюджет модели. История сохранена; выберите большее окно или начните новый чат с нужными данными.', 'The current task context exceeds the model budget. History is preserved; choose a larger window or start a new chat with the needed data.'));
-      const finalize = step >= settings.maxSteps || terminal;
-      if (step >= settings.maxSteps) finalStatus = 'limit';
+      const isLimitHit = settings.maxStepsEnabled !== false && step >= settings.maxSteps;
+      const finalize = isLimitHit || terminal;
+      if (isLimitHit) finalStatus = 'limit';
       let assistant: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '', timestamp: Date.now(), isStreaming: true, runId };
       session = { ...session, messages: [...session.messages, assistant] }; currentMessage = assistant; publish();
       const result = await LLMClient.chat(settings, buildContext({ ...session, messages: session.messages.slice(0, -1) }), {

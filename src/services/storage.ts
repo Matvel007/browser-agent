@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   temperature: 0.4, systemPrompt: '', autoAttachDebugger: true, theme: 'system', language: 'auto',
   saveSessionHistory: true, maxHistoryMessages: 20, maxContextTokens: 64000, compressionThreshold: 75,
   customHotkey: 'Alt+C', providerConfigs: {}, disabledTools: [], toolProfile: 'balanced',
-  searchEnabled: true, searchProvider: 'duckduckgo', tavilyApiKey: '', maxSteps: 24, maxOutputTokens: 4096,
+  searchEnabled: true, searchProvider: 'duckduckgo', tavilyApiKey: '', maxSteps: 50, maxStepsEnabled: true, maxOutputTokens: 4096,
   supportsVision: false, soundEnabled: true, soundVolume: 0.2, widgetEnabled: true,
 };
 
@@ -49,7 +49,8 @@ export function migrateSettings(loaded: Partial<AppSettings> = {}): AppSettings 
   settings.maxHistoryMessages = finite(settings.maxHistoryMessages, 20, 4, 200);
   settings.maxOutputTokens = finite(settings.maxOutputTokens, 4096, 256, Math.min(32768, Math.floor(settings.maxContextTokens / 3)));
   settings.compressionThreshold = finite(settings.compressionThreshold, 75, 40, 90);
-  settings.maxSteps = finite(settings.maxSteps, 24, 1, 100);
+  settings.maxSteps = finite(settings.maxSteps, 50, 1, 200);
+  settings.maxStepsEnabled = typeof loaded.maxStepsEnabled === 'boolean' ? loaded.maxStepsEnabled : true;
   settings.temperature = finite(settings.temperature, 0.4, 0, 2);
   settings.soundVolume = finite(settings.soundVolume, 0.2, 0, 1);
   settings.disabledTools = Array.isArray(settings.disabledTools) ? settings.disabledTools.filter(v => typeof v === 'string') : [];

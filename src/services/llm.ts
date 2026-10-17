@@ -9,6 +9,49 @@ export interface StreamCallbacks { onChunk?: (text: string) => void }
 export interface ChatOptions { tools?: boolean; finalize?: boolean; hasBrowser?: boolean; images?: { mime: string; data: string }[]; browserState?: string }
 export interface ChatResult { content: string; toolCalls?: ToolCallRecord[]; usage: TokenUsage; finishReason?: string }
 
+/**
+ * Some OpenAI-compatible models emit tool calls as plain text in their own markup
+ * (e.g. DeepSeek DSML: <｜｜DSML｜｜ invoke name="x"><｜｜DSML｜｜ parameter name="p" string="true">v</…>)
+ * instead of structured tool_calls. Recognise only registered tool names; anything else stays text.
+ */
+export function parseTextualToolCalls(content: string, knownTools: Set<string>): { calls: { name: string; args: any }[]; text: string } {
+  const calls: { name: string; args: any }[] = [];
+  const invoke = /<[｜|]+[^｜|<>\s]*[｜|]+\s*invoke\s+([^>]*)>([\s\S]*?)<\/[｜|]+[^｜|<>\s]*[｜|]+\s*invoke\s*>/gi;
+  const param = /<[｜|]+[^｜|<>\s]*[｜|]+\s*parameter\s+([^>]*)>([\s\S]*?)<\/[｜|]+[^｜|<>\s]*[｜|]+\s*parameter\s*>/gi;
+  let text = content, match: RegExpExecArray | null;
+  while ((match = invoke.exec(content))) {
+    const invokeAttrs = match[1];
+    const nameMatch = invokeAttrs.match(/\bname\s*=\s*["']([A-Za-z0-9_]+)["']/i);
+    const name = nameMatch ? nameMatch[1] : '';
+    if (!name || !knownTools.has(name)) continue;
+    const args: Record<string, any> = {};
+    let p: RegExpExecArray | null;
+    param.lastIndex = 0;
+    while ((p = param.exec(match[2]))) {
+      const paramAttrs = p[1];
+      const pNameMatch = paramAttrs.match(/\bname\s*=\s*["']([A-Za-z0-9_]+)["']/i);
+      if (!pNameMatch) continue;
+      const pName = pNameMatch[1];
+      const isString = /\bstring\s*=\s*["']true["']/i.test(paramAttrs);
+      const val = p[2];
+      args[pName] = isString ? val : (() => { try { return JSON.parse(val); } catch { return val; } })();
+    }
+    calls.push({ name, args });
+    text = text.replace(match[0], '');
+  }
+  text = text.replace(/<[｜|]+[^｜|<>\s]*[｜|]+\s*calls\s*>[\s\S]*?<\/[｜|]+[^｜|<>\s]*[｜|]+\s*calls\s*>/gi, '');
+  text = text.replace(/<\/?\s*[｜|]+[^｜|<>\s]*[｜|]+\s*calls\s*>/gi, '').trim();
+  return { calls, text };
+}
+
+export function cleanStreamingContent(content: string): string {
+  return content
+    .replace(/<[｜|]+[^｜|<>\s]*[｜|]+\s*calls\s*>[\s\S]*?<\/[｜|]+[^｜|<>\s]*[｜|]+\s*calls\s*>/gi, '')
+    .replace(/<[｜|]+[^｜|<>\s]*[｜|]+\s*invoke\b[\s\S]*?<\/[｜|]+[^｜|<>\s]*[｜|]+\s*invoke\s*>/gi, '')
+    .replace(/<[｜|]+[^｜|<>\s]*[｜|]+[\s\S]*$/, '')
+    .trim();
+}
+
 export function estimateHistoryTokens(messages: ChatMessage[], systemPrompt = '') {
   return estimateTokens(systemPrompt) + messages.reduce((sum, msg) => sum + estimateTokens(msg.content) + (msg.toolCalls ? estimateTokens(msg.toolCalls) : 0) + 8, 0);
 }
@@ -99,12 +142,13 @@ export function formatAnthropic(messages: ChatMessage[]) {
   }, []);
 }
 
-export async function* sseData(stream: ReadableStream<Uint8Array>): AsyncGenerator<any> {
+export async function* sseData(stream: ReadableStream<Uint8Array>, onDone?: () => void): AsyncGenerator<any> {
   const reader = stream.getReader(), decoder = new TextDecoder();
   let buffer = '', data: string[] = [];
   const parse = () => {
     const text = data.join('\n'); data = [];
-    if (!text || text === '[DONE]') return undefined;
+    if (!text) return undefined;
+    if (text === '[DONE]') { onDone?.(); return undefined; }
     try { return JSON.parse(text); } catch { throw new Error('Invalid JSON in API event stream'); }
   };
   try {
@@ -190,6 +234,7 @@ export class LLMClient {
     const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
     await checkResponse(response);
     let content = '', delivered = '', finishReason: string | undefined, usage: TokenUsage | undefined;
+    let sawDone = false;
     const buffers = new Map<number, { id: string; name: string; args: string; providerData?: any }>();
     const calls: ToolCallRecord[] = [];
     const addCall = (raw: { id: string; name: string; args: string; providerData?: any }) => {
@@ -197,7 +242,7 @@ export class LLMClient {
       try { args = JSON.parse(raw.args || '{}'); } catch { throw new Error(`Invalid tool arguments for ${raw.name}; action was not executed`); }
       calls.push({ id: raw.id, name: raw.name, args, status: 'pending', timestamp: Date.now(), providerData: raw.providerData });
     };
-    for await (const event of sseData(response.body!)) {
+    for await (const event of sseData(response.body!, () => { sawDone = true; })) {
       signal.throwIfAborted();
       if (event.error || event.type === 'error') throw new Error(redactText(event.error?.message || event.message || 'API stream error'));
       if (settings.provider === 'gemini') {
@@ -230,9 +275,19 @@ export class LLMClient {
       }
       if (content.length > 200000) throw new Error('Model output exceeds the response size limit');
       for (const raw of buffers.values()) if (raw.args.length > 64000) throw new Error('Tool arguments exceed 64 KiB');
-      if (content !== delivered) { delivered = content; callbacks.onChunk?.(content); }
+      const clean = cleanStreamingContent(content);
+      if (clean !== delivered) { delivered = clean; callbacks.onChunk?.(clean); }
     }
     for (const raw of buffers.values()) if (raw.name) addCall(raw);
+    if (sawDone && !finishReason) finishReason = 'stop';
+    if (!calls.length && /[｜|]\s*invoke\b/i.test(content)) {
+      const allKnown = new Set(availableTools(settings, options.hasBrowser !== false).map(t => t.name));
+      const parsed = parseTextualToolCalls(content, allKnown);
+      if (parsed.calls.length) {
+        for (const call of parsed.calls) addCall({ id: crypto.randomUUID(), name: call.name, args: JSON.stringify(call.args) });
+        content = parsed.text;
+      }
+    }
     if (calls.length && !finishReason) throw new Error('API stream ended without a completion marker. Tool actions were not executed.');
     if (calls.length > 20) throw new Error('Model requested too many tools in one response');
     const costs = promptEstimate(settings, messages, options);

@@ -107,9 +107,10 @@ export const SettingsModal: React.FC<Props> = ({ settings, isOpen, initialTab = 
         {active === 'behavior' && <>
           <Row label={tr('Дополнительные инструкции', 'Additional instructions')} hint={tr('Основной нейтральный промпт встроен. Каталог инструментов в этот текст добавлять не нужно.', 'Neutral core instructions are built in. Do not duplicate the tool catalog here.')}><textarea rows={7} value={form.systemPrompt || ''} onChange={e => patch({ systemPrompt: e.target.value })} /></Row>
           <Row label={tr('Температура', 'Temperature')}>{numeric('temperature', 0, 2, 0.1)}</Row>
-          <Row label={tr('Максимум шагов задачи', 'Maximum task steps')}>{numeric('maxSteps', 1, 100)}</Row>
+          <Toggle label={tr('Ограничивать шаги задачи', 'Limit task steps')} checked={form.maxStepsEnabled} onChange={maxStepsEnabled => patch({ maxStepsEnabled })} />
+          {form.maxStepsEnabled && <Row label={tr('Максимум шагов задачи', 'Maximum task steps')}>{numeric('maxSteps', 1, 200)}</Row>}
           <Toggle label={tr('Подключать CDP при обращении к инструменту', 'Connect CDP when a tool needs it')} checked={form.autoAttachDebugger} onChange={autoAttachDebugger => patch({ autoAttachDebugger })} />
-          <p className="hint">{tr('По достижении лимита агент формирует итог. Отправленные браузеру действия не повторяются автоматически.', 'At the limit the agent summarizes the outcome. Browser actions are not automatically retried.')}</p>
+          <p className="hint">{form.maxStepsEnabled ? tr('По достижении лимита агент формирует итог. Отправленные браузеру действия не повторяются автоматически.', 'At the limit the agent summarizes the outcome. Browser actions are not automatically retried.') : tr('Агент выполняет шаги до полного решения задачи или ручной остановки.', 'The agent runs steps until the task is complete or manually stopped.')}</p>
         </>}
         {active === 'interface' && <>
           <Row label={tr('Тема', 'Theme')}><select value={form.theme} onChange={e => patch({ theme: e.target.value as AppSettings['theme'] })}><option value="system">{tr('Системная', 'System')}</option><option value="light">{tr('Светлая', 'Light')}</option><option value="dark">{tr('Тёмная', 'Dark')}</option></select></Row>
