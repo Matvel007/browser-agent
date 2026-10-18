@@ -50,6 +50,21 @@ async function binaryArtifact(data: string, mime: string, name: string, sessionI
   return putArtifact(new Blob([bytes], { type: mime }), name, sessionId);
 }
 
+const ACTION_TOOLS = new Set(['devtools_click_element', 'devtools_type_text', 'devtools_set_value', 'devtools_press_key', 'devtools_scroll_page']);
+
+async function pageSignature(tabId: number) {
+  return devtools.value(tabId, `(() => {
+    const roots=[document];
+    const collect=(root)=>{for(const el of root.querySelectorAll('*'))if(el.shadowRoot){roots.push(el.shadowRoot);collect(el.shadowRoot);}};
+    collect(document);
+    return {url:location.href,title:document.title,
+      nodes:roots.reduce((sum,root)=>sum+root.querySelectorAll('*').length,0),
+      text:roots.reduce((sum,root)=>sum+(root.textContent||'').length,0),
+      active:(document.activeElement?.value?.length||0),
+      scroll:document.scrollingElement?.scrollTop||0};
+  })()`);
+}
+
 export async function executeTool(name: string, args: any, settings: AppSettings, context: ToolContext): Promise<ToolResult> {
   const profile: ToolProfile = args?.full ? 'full' : args?.profile || settings.toolProfile;
   try {
@@ -67,6 +82,8 @@ export async function executeTool(name: string, args: any, settings: AppSettings
     let truncation: string[] = [];
     let next: string | undefined;
     const id = tabId!;
+    const verifyAction = ACTION_TOOLS.has(name) && !args.frameId;
+    const beforeAction = verifyAction ? await pageSignature(id).catch(() => null) : null;
     switch (name) {
       case 'history_read': {
         const session: any = await dbRequest('sessions', 'readonly', store => store.get(context.sessionId));
@@ -122,6 +139,21 @@ export async function executeTool(name: string, args: any, settings: AppSettings
           case 'reload': if (targetId == null) throw new Error('tabId required'); await chrome.tabs.reload(targetId); result = { reloadedTabId: targetId }; break;
           case 'back': await chrome.tabs.goBack(targetId); result = { navigation: 'back' }; break;
           case 'forward': await chrome.tabs.goForward(targetId); result = { navigation: 'forward' }; break;
+          case 'summaries': {
+            const ids = (Array.isArray(args.tabIds) ? args.tabIds : (await chrome.tabs.query({ currentWindow: true })).map(tab => tab.id))
+              .filter((id: number | undefined): id is number => typeof id === 'number').slice(0, 5);
+            const tabs = [];
+            for (const id of ids) {
+              try {
+                const summary = await devtools.getPageSummary(id);
+                tabs.push({ tabId: id, title: summary.title, url: summary.url, content: summary.content.slice(0, 4000), contentLength: summary.contentLength });
+              } catch (err: any) {
+                tabs.push({ tabId: id, error: String(err?.message || err) });
+              }
+            }
+            result = { tabs, total: tabs.length };
+            break;
+          }
           default: throw new Error('Unknown tab action');
         }
         break;
@@ -139,10 +171,28 @@ export async function executeTool(name: string, args: any, settings: AppSettings
         const tree = await devtools.sendCommand(id, 'Accessibility.getFullAXTree');
         result = pageItems(tree.nodes || [], args.cursor, args.limit || 20); break;
       }
+      case 'devtools_frames': result = pageItems(await devtools.frames(id), args.cursor, args.limit || 20); break;
+      case 'devtools_find_element': result = await devtools.findElement(id, args); break;
+      case 'devtools_handle_dialog': result = await devtools.handleDialog(id, args.accept !== false, args.promptText); break;
       case 'devtools_click_element': result = await devtools.clickElement(id, args.selector, args.frameId); break;
       case 'devtools_hover': result = await devtools.clickElement(id, args.selector, args.frameId, true); break;
       case 'devtools_type_text': result = await devtools.typeText(id, args); break;
       case 'devtools_set_value': result = await devtools.setValue(id, args); break;
+      case 'devtools_set_file_input': {
+        const row = await getArtifact(args.artifactId, context.sessionId);
+        if (row.bytes > 2 * 1024 * 1024) throw new Error('File upload is limited to 2 MiB');
+        const bytes = new Uint8Array(await row.blob.arrayBuffer());
+        const chunks: string[] = [];
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
+        const data = btoa(chunks.join(''));
+        result = await devtools.value(id, `(() => {const el=${devtools.element(args.selector)};
+          if(!(el instanceof HTMLInputElement)||el.type!=='file')throw new Error('Expected input[type=file]');
+          const bin=atob(${JSON.stringify(data)});const bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+          const file=new File([bytes],${JSON.stringify(args.name || row.name)},{type:${JSON.stringify(args.mime || row.mime)}});
+          const dt=new DataTransfer();dt.items.add(file);el.files=dt.files;
+          el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+          return {name:file.name,size:file.size,type:file.type,files:el.files.length};})()`, args.frameId); break;
+      }
       case 'devtools_scroll_page': result = await devtools.scrollPage(id, args); break;
       case 'devtools_navigate': result = await devtools.navigate(id, args.url); break;
       case 'devtools_press_key': {
@@ -168,6 +218,7 @@ export async function executeTool(name: string, args: any, settings: AppSettings
       }
       case 'devtools_get_console_logs': result = await devtools.consoleLogs(id, args); break;
       case 'devtools_get_network_requests': result = await devtools.network(id, args); break;
+      case 'devtools_network_intercept': result = await devtools.interceptNetwork(id, args); break;
       case 'devtools_network_detail': result = await devtools.networkDetail(id, args); break;
       case 'devtools_capture_screenshot': {
         if (args.mode === 'text') { result = await devtools.getPageSummary(id); break; }
@@ -184,8 +235,7 @@ export async function executeTool(name: string, args: any, settings: AppSettings
         result = { width: Math.round(region.width * scale), height: Math.round(region.height * scale), visionRequested: Boolean(args.vision) }; break;
       }
       case 'devtools_dom_css': {
-        result = await devtools.value(id, `(() => {const state=globalThis.__browserAgentElements;const selector=${JSON.stringify(args.selector)};
-          const el=selector.startsWith('@')?state?.nodes.get(selector):document.querySelector(selector);if(!el?.isConnected)throw new Error('Element missing or reference stale');
+        result = await devtools.value(id, `(() => {const el=${devtools.element(args.selector)};if(!el?.isConnected)throw new Error('Element missing or reference stale');
           const changes=${JSON.stringify(args.styles || {})};for(const [key,value]of Object.entries(changes))el.style.setProperty(key,String(value));
           const computed=getComputedStyle(el);return Object.fromEntries(${JSON.stringify(args.properties || ['display', 'position', 'color', 'background-color', 'font-size', 'width', 'height'])}.map(key=>[key,computed.getPropertyValue(key)]));})()`, args.frameId); break;
       }
@@ -217,6 +267,13 @@ export async function executeTool(name: string, args: any, settings: AppSettings
       default: throw new Error('Tool has no implementation');
     }
     context.signal.throwIfAborted();
+    if (verifyAction && beforeAction) {
+      await abortableDelay(300, context.signal);
+      const afterAction = await pageSignature(id).catch(() => null);
+      if (afterAction && JSON.stringify(beforeAction) === JSON.stringify(afterAction)) {
+        truncation.push('No visible page change detected; verify the target, wait for an async update, or inspect the DOM before repeating.');
+      }
+    }
 
     if (!artifact && typeof result === 'string' && result.startsWith('data:')) {
       const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(result);

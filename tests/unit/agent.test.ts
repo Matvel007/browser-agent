@@ -93,6 +93,21 @@ describe('history and agent lifecycle', () => {
     expect(session.messages.at(-1)?.status).toBe('limit');
     expect(session.messages.at(-1)?.content).toBeTruthy();
   });
+  it('blocks the same action after three attempts without progress', async () => {
+    const loopSettings = { ...settings, maxSteps: 10 };
+    const call = (id: string) => ({ ...result(''), toolCalls: [{ id, name: 'devtools_click_element', args: { selector: '#buy' }, status: 'pending' as const, timestamp: 2 }] });
+    const chat = vi.spyOn(LLMClient, 'chat')
+      .mockResolvedValueOnce(call('c1'))
+      .mockResolvedValueOnce(call('c2'))
+      .mockResolvedValueOnce(call('c3'))
+      .mockResolvedValueOnce(result('Changed approach.'));
+    const execute = vi.fn().mockResolvedValue(envelope({ clicked: true }));
+    const session = await runAgent(loopSettings, initial(), new AbortController().signal, { update() {}, chunk() {}, execute, settings: async () => loopSettings }, true);
+    expect(chat).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(session.messages.flatMap(message => message.toolCalls || []).filter(call => call.status === 'error')).toHaveLength(1);
+    expect(session.messages.at(-1)?.content).toBe('Changed approach.');
+  });
   it('allows steps beyond maxSteps when maxStepsEnabled is false', async () => {
     const noLimitSettings = { ...settings, maxSteps: 1, maxStepsEnabled: false };
     const chat = vi.spyOn(LLMClient, 'chat')

@@ -36,6 +36,7 @@ export interface AppSettings {
   version: number;
   providerConfigs: Partial<Record<ProviderType, ProviderConfig>>;
   disabledTools: string[];
+  confirmDangerousActions: boolean;
   toolProfile: ToolProfile;
   searchEnabled: boolean;
   searchProvider: 'duckduckgo' | 'tavily';

@@ -35,7 +35,8 @@ function redactCredentials(text: string): string {
     .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '[redacted Slack token]')
     .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[redacted AWS key]')
     .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[redacted JWT]')
-    .replace(/(["'](?:password|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret)["']\s*:\s*["'])[^"']*(["'])/gi, '$1[redacted]$2');
+    .replace(/(["'](?:password|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret)["']\s*:\s*["'])[^"']*(["'])/gi, '$1[redacted]$2')
+    .replace(/\b(password|passwd|pwd|пароль|card\s*(?:number|no)|cc-number|cvv|cvc|cc-csc)\b(\s*[:=]\s*)[^\s,;]+/gi, '$1$2[redacted]');
 }
 
 export function serializeArtifact(value: unknown): string {

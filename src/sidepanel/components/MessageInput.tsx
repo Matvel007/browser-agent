@@ -6,6 +6,9 @@ import { tr } from '../../services/i18n';
 
 export const SLASH_COMMANDS = [
   { command: '/compact', ru: 'Сжать контекст, сохранив историю', en: 'Compact context, keep transcript' },
+  { command: '/debug', ru: 'Отчёт об ошибках страницы', en: 'Page error report' },
+  { command: '/extract', ru: 'Извлечь данные со страницы', en: 'Extract page data' },
+  { command: '/perf', ru: 'Анализ производительности', en: 'Performance analysis' },
   { command: '/clear', ru: 'Очистить текущий чат', en: 'Clear this chat' },
   { command: '/new', ru: 'Новый диалог', en: 'New conversation' },
   { command: '/model', ru: 'Модели и подключение', en: 'Models & connection' },

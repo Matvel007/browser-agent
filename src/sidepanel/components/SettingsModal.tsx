@@ -110,6 +110,8 @@ export const SettingsModal: React.FC<Props> = ({ settings, isOpen, initialTab = 
           <Toggle label={tr('Ограничивать шаги задачи', 'Limit task steps')} checked={form.maxStepsEnabled} onChange={maxStepsEnabled => patch({ maxStepsEnabled })} />
           {form.maxStepsEnabled && <Row label={tr('Максимум шагов задачи', 'Maximum task steps')}>{numeric('maxSteps', 1, 200)}</Row>}
           <Toggle label={tr('Подключать CDP при обращении к инструменту', 'Connect CDP when a tool needs it')} checked={form.autoAttachDebugger} onChange={autoAttachDebugger => patch({ autoAttachDebugger })} />
+          <Toggle label={tr('Спрашивать перед опасными действиями', 'Ask before dangerous actions')} checked={form.confirmDangerousActions} onChange={confirmDangerousActions => patch({ confirmDangerousActions })} />
+          <p className="hint">{tr('Клики, ввод, отправка форм, переходы, JS/CDP и изменения хранилища будут ждать подтверждения. Это защищает от случайных покупок и удалений.', 'Clicks, typing, form submission, navigation, JS/CDP and storage changes will wait for confirmation. This protects against accidental purchases and deletions.')}</p>
           <p className="hint">{form.maxStepsEnabled ? tr('По достижении лимита агент формирует итог. Отправленные браузеру действия не повторяются автоматически.', 'At the limit the agent summarizes the outcome. Browser actions are not automatically retried.') : tr('Агент выполняет шаги до полного решения задачи или ручной остановки.', 'The agent runs steps until the task is complete or manually stopped.')}</p>
         </>}
         {active === 'interface' && <>

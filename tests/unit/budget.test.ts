@@ -42,6 +42,14 @@ describe('bounded output contracts', () => {
       expect(envelope({ value: token }).data.value).not.toContain(token);
     }
   });
+  it('redacts labeled passwords and payment fields in plain text', () => {
+    const text = 'Password: hunter2; card number: 4111 1111 1111 1111; CVV=123';
+    const safe = envelope({ text }).data.text;
+    expect(safe).not.toContain('hunter2');
+    expect(safe).not.toContain('4111');
+    expect(safe).not.toContain('123');
+    expect(safe).toContain('[redacted]');
+  });
   it('redacts common header names and camel-case token fields', () => {
     const input = { 'X-API-Key': 'private-key', accessToken: 'private-access', token: 'private-token', 'Proxy-Authorization': 'private-proxy', cookies: [{ name: 'session', domain: '.test', path: '/', value: 'private-cookie' }] };
     expect(JSON.stringify(envelope(input))).not.toContain('private-');

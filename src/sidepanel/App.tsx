@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActiveTabInfo, AppSettings, Attachment, ChatSession, SettingsTab } from '../types';
+import { ActiveTabInfo, AppSettings, Attachment, ChatSession, SettingsTab, ToolCallRecord } from '../types';
 import { DEFAULT_SETTINGS, deleteChatSession, getChatSession, getChatSessions, getSettings, saveSettings, saveSingleSession } from '../services/storage';
 import { compactSession, runAgent } from '../services/agent';
 import { contextCosts, contextToolCosts, summaryForRollback } from '../services/context';
 import { i18n, tr } from '../services/i18n';
 import { playCompletion, unlockAudio } from '../services/sound';
-import { cleanUrl } from '../services/budget';
+import { cleanUrl, envelope } from '../services/budget';
 import { logicalMessageCount } from '../services/transcript';
 import { Header } from './components/Header';
 import { MessageList } from './components/MessageList';
@@ -13,6 +13,23 @@ import { MessageInput, SLASH_COMMANDS } from './components/MessageInput';
 import { ModelSelectorBar } from './components/ModelSelectorBar';
 import { SettingsModal } from './components/SettingsModal';
 import { SessionsDrawer } from './components/SessionsDrawer';
+
+const PENDING_CONTEXT_KEY = 'browser_agent_pending_context';
+type ContextPayload = { action: 'explain' | 'translate' | 'summarize'; text?: string; url?: string; pageUrl?: string; frameId?: number; tabId?: number; createdAt?: number };
+
+function contextDraft(payload: ContextPayload) {
+  if (payload.action === 'summarize') return payload.url ? tr('Суммируй эту ссылку: ', 'Summarize this link: ') + payload.url : '';
+  const body = (payload.text || payload.url || '').trim();
+  if (!body) return '';
+  const prefix = payload.action === 'translate' ? tr('Переведи этот фрагмент:\n\n', 'Translate this fragment:\n\n') : tr('Объясни этот фрагмент:\n\n', 'Explain this fragment:\n\n');
+  return prefix + body;
+}
+
+const DANGEROUS_TOOLS = new Set(['devtools_click_element', 'devtools_type_text', 'devtools_set_value', 'devtools_set_file_input', 'devtools_press_key',
+  'devtools_evaluate_js', 'devtools_cdp', 'devtools_storage', 'devtools_navigate', 'devtools_network_intercept', 'browser_tabs']);
+type PendingConfirmation = { call: ToolCallRecord; resolve: (allowed: boolean) => void };
+const needsConfirmation = (call: ToolCallRecord) => DANGEROUS_TOOLS.has(call.name)
+  && !(call.name === 'browser_tabs' && ['list', 'summaries'].includes(String(call.args?.action)));
 
 function newSession(): ChatSession {
   return { id: crypto.randomUUID(), title: tr('Новый чат', 'New chat'), createdAt: Date.now(), updatedAt: Date.now(), messages: [], version: 2 };
@@ -42,6 +59,8 @@ export const App: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [, renderLanguage] = useState(0);
   const operation = useRef<{ id: string; controller: AbortController }>();
+  const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
+  const confirmationRef = useRef<PendingConfirmation | null>(null);
   const saveQueue = useRef(Promise.resolve());
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const switchVersion = useRef(0);
@@ -80,10 +99,40 @@ export const App: React.FC = () => {
     if (typeof chrome !== 'undefined') { chrome.tabs?.onActivated.addListener(listener); chrome.tabs?.onUpdated.addListener(listener); }
     return () => {
       mounted = false; unsubscribe(); clearTimeout(saveTimer.current);
+      confirmationRef.current?.resolve(false); confirmationRef.current = null;
       operation.current?.controller.abort();
       if (operation.current) void runtime({ action: 'CANCEL_RUN', runId: operation.current.id }).catch(() => {});
       if (typeof chrome !== 'undefined') { chrome.tabs?.onActivated.removeListener(listener); chrome.tabs?.onUpdated.removeListener(listener); }
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.onMessage) return;
+    let active = true;
+    const consume = (payload?: ContextPayload) => {
+      if (!active || !payload) return;
+      const draft = contextDraft(payload);
+      if (!draft) return;
+      setInput(draft);
+      setNotice(tr('Контекст из меню добавлен в поле ввода.', 'Context from the menu was added to the input.'));
+    };
+    const listener = (message: any) => { if (message?.action === 'CONTEXT_MENU_CONTEXT') consume(message.payload); };
+    chrome.runtime.onMessage.addListener(listener);
+    const storage = chrome.storage.session || chrome.storage.local;
+    const onStorage = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area !== 'session' && area !== 'local') return;
+      const payload = changes[PENDING_CONTEXT_KEY]?.newValue as ContextPayload | undefined;
+      if (payload) { consume(payload); void storage.remove(PENDING_CONTEXT_KEY); }
+    };
+    chrome.storage.onChanged.addListener(onStorage);
+    void storage.get(PENDING_CONTEXT_KEY).then(row => {
+      const payload = row?.[PENDING_CONTEXT_KEY] as ContextPayload | undefined;
+      if (payload && Date.now() - (payload.createdAt || 0) < 5 * 60 * 1000) {
+        consume(payload);
+        void storage.remove(PENDING_CONTEXT_KEY);
+      }
+    }).catch(() => {});
+    return () => { active = false; chrome.runtime.onMessage.removeListener(listener); chrome.storage.onChanged.removeListener(onStorage); };
   }, []);
 
   useEffect(() => {
@@ -99,7 +148,12 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('languagechange', refreshLanguage);
   }, [settings.language]);
 
+  const resolveConfirmation = (allowed: boolean) => {
+    const pending = confirmationRef.current;
+    confirmationRef.current = null; setConfirmation(null); pending?.resolve(allowed);
+  };
   const cancel = (detach = false) => {
+    if (confirmationRef.current) resolveConfirmation(false);
     const op = operation.current;
     if (!op) return;
     op.controller.abort(); void runtime({ action: 'CANCEL_RUN', runId: op.id }).catch(() => {});
@@ -144,6 +198,14 @@ export const App: React.FC = () => {
         update: value => { if (operation.current === op) update(value); },
         chunk: value => { if (operation.current === op) update(value); },
         execute: async (call, profile) => {
+          if (settingsRef.current.confirmDangerousActions && needsConfirmation(call)) {
+            const allowed = await new Promise<boolean>(resolve => {
+              const pending = { call, resolve };
+              confirmationRef.current = pending; setConfirmation(pending);
+            });
+            if (!allowed) return envelope({ error: tr('Действие отклонено пользователем.', 'Action denied by the user.') },
+              { ok: false, profile: 'lean', summary: `${call.name}: denied` });
+          }
           const response = await runtime({ action: 'EXECUTE_DEVTOOLS_TOOL', payload: { tabId: activeTab?.id, toolName: call.name,
             args: { ...call.args, profile: call.args.profile || profile }, runId: op.id, sessionId: initial.id,
             history: call.name === 'history_read' ? sessionRef.current.messages : undefined } });
@@ -165,9 +227,13 @@ export const App: React.FC = () => {
     }
   };
 
+  const runPrompt = (text: string) => { void send(text).catch(err => setNotice(err.message)); };
   const command = (value: string) => {
     switch (value.trim().toLowerCase()) {
       case '/compact': void compact(); break;
+      case '/debug': runPrompt(tr('Собери отчёт об ошибках на текущей странице. Используй devtools_get_console_logs (level: "error") и devtools_get_network_requests (mode: "list"), затем проверь DOM вокруг проблемных элементов. Верни: 1) ошибки консоли, 2) упавшие запросы 4xx/5xx, 3) вероятную причину, 4) конкретные шаги исправления. Не меняй страницу.', 'Build a bug report for the current page. Use devtools_get_console_logs (level: "error") and devtools_get_network_requests (mode: "list"), then inspect the DOM around the failing elements. Return: 1) console errors, 2) failed 4xx/5xx requests, 3) likely cause, 4) concrete fix steps. Do not modify the page.')); break;
+      case '/extract': runPrompt(tr('Извлеки структурированные данные с текущей страницы. Сначала определи повторяющиеся элементы (таблицы, карточки, списки), затем собери их в JSON-массив с понятными полями. Если данных много, сохрани полный JSON как артефакт и покажи краткое резюме и первые 5 записей. Не меняй страницу.', 'Extract structured data from the current page. First identify repeating elements (tables, cards, lists), then collect them into a JSON array with clear field names. If there is a lot of data, save the full JSON as an artifact and show a short summary plus the first 5 records. Do not modify the page.')); break;
+      case '/perf': runPrompt(tr('Проанализируй производительность текущей страницы. Используй devtools_performance (metrics) и devtools_get_network_requests, при необходимости devtools_get_console_logs. Найди 5 главных узких мест: медленные запросы, тяжёлые ресурсы, ошибки, блокирующие скрипты. Для каждого дай конкретное исправление. Не меняй страницу.', 'Analyze the current page performance. Use devtools_performance (metrics) and devtools_get_network_requests, and devtools_get_console_logs if needed. Find the top 5 bottlenecks: slow requests, heavy resources, errors, blocking scripts. Give a concrete fix for each. Do not modify the page.')); break;
       case '/new': changeSession(newSession()); break;
       case '/clear': cancel(true); update({ ...sessionRef.current, messages: [], summary: undefined, updatedAt: Date.now() }, true); break;
       case '/settings': openSettings('interface'); break;
@@ -194,6 +260,17 @@ export const App: React.FC = () => {
       costs={costs} toolCosts={contextToolCosts(session)} busy={isGenerating} onTriggerCompact={() => { void compact(); }} onOpenModelSettings={() => openSettings('models')}
       onSelectModel={model => { void save({ ...settings, model }).catch(err => setNotice(err.message)); }} />
     <SettingsModal isOpen={settingsOpen} settings={settings} initialTab={settingsTab} onSave={save} onClose={() => setSettingsOpen(false)} />
+    {confirmation && <div className="modal-root" onPointerDown={event => { if (event.target === event.currentTarget) resolveConfirmation(false); }}>
+      <div className="confirm-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <h3 id="confirm-title">{tr('Подтвердить действие?', 'Allow this action?')}</h3>
+        <p>{tr('Агент хочет выполнить:', 'The agent wants to run:')} <code>{confirmation.call.name}</code></p>
+        <pre>{JSON.stringify(confirmation.call.args, null, 2).slice(0, 1200)}</pre>
+        <div className="confirm-actions">
+          <button type="button" className="button" onClick={() => resolveConfirmation(false)}>{tr('Отклонить', 'Deny')}</button>
+          <button type="button" className="button primary" onClick={() => resolveConfirmation(true)}>{tr('Разрешить', 'Allow')}</button>
+        </div>
+      </div>
+    </div>}
     <SessionsDrawer isOpen={historyOpen} onClose={() => setHistoryOpen(false)} sessions={sessions} currentSessionId={session.id}
       onSelectSession={selected => {
         const version = ++switchVersion.current; cancel(true); setReady(false);

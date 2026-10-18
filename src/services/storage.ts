@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   version: 2, provider: 'routerai', apiKey: '', model: '', customBaseUrl: 'https://routerai.ru/api/v1',
   temperature: 0.4, systemPrompt: '', autoAttachDebugger: true, theme: 'system', language: 'auto',
   saveSessionHistory: true, maxHistoryMessages: 20, maxContextTokens: 64000, compressionThreshold: 75,
-  customHotkey: 'Alt+C', providerConfigs: {}, disabledTools: [], toolProfile: 'balanced',
+  customHotkey: 'Alt+C', providerConfigs: {}, disabledTools: [], confirmDangerousActions: false, toolProfile: 'balanced',
   searchEnabled: true, searchProvider: 'duckduckgo', tavilyApiKey: '', maxSteps: 50, maxStepsEnabled: true, maxOutputTokens: 4096,
   supportsVision: false, soundEnabled: true, soundVolume: 0.2, widgetEnabled: true,
 };
@@ -54,6 +54,7 @@ export function migrateSettings(loaded: Partial<AppSettings> = {}): AppSettings 
   settings.temperature = finite(settings.temperature, 0.4, 0, 2);
   settings.soundVolume = finite(settings.soundVolume, 0.2, 0, 1);
   settings.disabledTools = Array.isArray(settings.disabledTools) ? settings.disabledTools.filter(v => typeof v === 'string') : [];
+  settings.confirmDangerousActions = typeof loaded.confirmDangerousActions === 'boolean' ? loaded.confirmDangerousActions : false;
   if (!['lean', 'balanced', 'full'].includes(settings.toolProfile)) settings.toolProfile = 'balanced';
   settings.providerConfigs = { ...(settings.providerConfigs || {}) };
   settings.providerConfigs[settings.provider] = { apiKey: settings.apiKey, model: settings.model, customBaseUrl: settings.customBaseUrl };

@@ -6,38 +6,73 @@ import { resolveLanguage } from '../services/language';
 const runs = new Map<string, { controller: AbortController; sessionId: string; tabId?: number; touched: number }>();
 const cancelled = new Map<string, number>();
 const lastTargets = new Map<number, number>();
+const PENDING_CONTEXT_KEY = 'browser_agent_pending_context';
+type PendingContext = { action: 'explain' | 'translate' | 'summarize'; text?: string; url?: string; pageUrl?: string; frameId?: number; tabId?: number; createdAt: number };
 let widgetUpdates = Promise.resolve();
+
+async function storePendingContext(value: PendingContext) {
+  const storage = chrome.storage.session || chrome.storage.local;
+  await storage.set({ [PENDING_CONTEXT_KEY]: value });
+}
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
   void chrome.tabs.get(tabId).then(tab => { if (/^https?:/.test(tab.url || '')) lastTargets.set(windowId, tabId); }).catch(() => {});
 });
 
+function createContextMenus(lang: 'ru' | 'en') {
+  const ru = lang === 'ru';
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'open_browser_agent', title: ru ? 'Открыть Browser Agent' : 'Open Browser Agent', contexts: ['page', 'editable'] });
+    chrome.contextMenus.create({ id: 'explain_selection', title: ru ? 'Объяснить выделенное' : 'Explain selection', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'translate_selection', title: ru ? 'Перевести выделенное' : 'Translate selection', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'summarize_link', title: ru ? 'Суммировать ссылку' : 'Summarize link', contexts: ['link'] });
+    chrome.contextMenus.create({ id: 'summarize_page', title: ru ? 'Суммировать страницу' : 'Summarize page', contexts: ['page'] });
+  });
+}
+void getSettings().then(settings => createContextMenus(resolveLanguage(settings.language))).catch(() => createContextMenus(resolveLanguage()));
+
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(console.warn);
-  chrome.contextMenus.removeAll(() => chrome.contextMenus.create({ id: 'open_browser_agent', title: chrome.i18n?.getUILanguage?.().startsWith('ru') ? 'Открыть Browser Agent' : 'Open Browser Agent', contexts: ['page', 'selection', 'link', 'editable'] }));
+  void getSettings().then(settings => createContextMenus(resolveLanguage(settings.language))).catch(() => createContextMenus(resolveLanguage()));
   void chrome.storage.local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(console.warn);
   if (chrome.storage.session) widgetUpdates = widgetUpdates.then(() => chrome.storage.session.get(null)).then(state => chrome.storage.session.remove(Object.keys(state).filter(key => key.startsWith('widget_hidden_')))).catch(console.warn);
 });
 
 async function openPanel(windowId?: number) {
-  if (chrome.sidePanel?.open && windowId != null) return chrome.sidePanel.open({ windowId });
+  if (chrome.sidePanel?.open && windowId != null) {
+    try { return await chrome.sidePanel.open({ windowId }); }
+    catch (err) { console.warn('sidePanel.open failed, opening a tab instead', err); }
+  }
   return chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.browser_agent_settings) {
-    const before = changes.browser_agent_settings.oldValue || {}, after = changes.browser_agent_settings.newValue || {};
-    if (before.widgetEnabled === after.widgetEnabled && before.language === after.language) return;
-    widgetUpdates = widgetUpdates.then(() => chrome.tabs.query({})).then(async tabs => {
-      if (before.widgetEnabled === false && after.widgetEnabled !== false && chrome.storage.session) {
-        await chrome.storage.session.remove(tabs.map(tab => `widget_hidden_${tab.id}`));
-      }
-      await Promise.all(tabs.filter(tab => tab.id != null).map(tab => chrome.tabs.sendMessage(tab.id!, { action: 'WIDGET_VISIBILITY', enabled: after.widgetEnabled !== false }).catch(() => {})));
-    }).catch(console.warn);
+  if (area !== 'local' || !changes.browser_agent_settings) return;
+  const before = changes.browser_agent_settings.oldValue || {}, after = changes.browser_agent_settings.newValue || {};
+  if (before.language !== after.language) {
+    void getSettings().then(settings => createContextMenus(resolveLanguage(settings.language))).catch(console.warn);
   }
+  if (before.widgetEnabled === after.widgetEnabled) return;
+  widgetUpdates = widgetUpdates.then(() => chrome.tabs.query({})).then(async tabs => {
+    if (before.widgetEnabled === false && after.widgetEnabled !== false && chrome.storage.session) {
+      await chrome.storage.session.remove(tabs.map(tab => `widget_hidden_${tab.id}`));
+    }
+    await Promise.all(tabs.filter(tab => tab.id != null).map(tab => chrome.tabs.sendMessage(tab.id!, { action: 'WIDGET_VISIBILITY', enabled: after.widgetEnabled !== false }).catch(() => {})));
+  }).catch(console.warn);
 });
 chrome.tabs.onRemoved.addListener(id => { void chrome.storage.session?.remove(`widget_hidden_${id}`); });
 chrome.action.onClicked.addListener(tab => { void openPanel(tab.windowId).catch(console.warn); });
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'open_browser_agent' || info.menuItemId === 'open_devtools_copilot') void openPanel(tab?.windowId).catch(console.warn);
+  if (info.menuItemId === 'open_browser_agent' || info.menuItemId === 'open_devtools_copilot') { void openPanel(tab?.windowId).catch(console.warn); return; }
+  const summarizePage = info.menuItemId === 'summarize_page';
+  const action = info.menuItemId === 'explain_selection' ? 'explain' : info.menuItemId === 'translate_selection' ? 'translate'
+    : info.menuItemId === 'summarize_link' || summarizePage ? 'summarize' : null;
+  if (!action) return;
+  const payload: PendingContext = { action, text: (info.selectionText || '').slice(0, 8000),
+    url: (summarizePage ? (info.pageUrl || tab?.url || '') : (info.linkUrl || '')).slice(0, 4000),
+    pageUrl: (info.pageUrl || tab?.url || '').slice(0, 4000), frameId: info.frameId, tabId: tab?.id, createdAt: Date.now() };
+  void openPanel(tab?.windowId).catch(console.warn);
+  void storePendingContext(payload).then(() => {
+    void chrome.runtime.sendMessage({ action: 'CONTEXT_MENU_CONTEXT', payload }).catch(() => {});
+  }).catch(console.warn);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

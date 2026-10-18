@@ -30,7 +30,7 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
   const runId = crypto.randomUUID();
   let currentMessage: ChatMessage | undefined;
   let images: NonNullable<ChatOptions['images']> = [];
-  let executed = 0, outputRetry = 0;
+  let executed = 0, outputRetry = 0, lastCallSignature = '', repeatedCalls = 0;
   const publish = () => { session = { ...session, updatedAt: Date.now() }; hooks.update(session); };
   const replace = (message: ChatMessage, chunk = false) => {
     currentMessage = message;
@@ -104,6 +104,15 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
           const calls = [...assistant.toolCalls!]; calls[i] = call; assistant = { ...assistant, toolCalls: calls }; replace(assistant);
         };
         updateCall();
+        const signature = `${call.name}:${JSON.stringify(call.args || {})}`;
+        if (signature === lastCallSignature) repeatedCalls++; else { lastCallSignature = signature; repeatedCalls = 1; }
+        if (repeatedCalls >= 3) {
+          call.status = 'error';
+          call.error = tr('Повтор одного и того же действия без прогресса.', 'The same action is repeating without progress.');
+          call.result = envelope({ error: call.error }, { ok: false, profile: 'lean', summary: 'Repeated action blocked' });
+          updateCall();
+          continue;
+        }
         try {
           call.result = await hooks.execute(call, lean && !call.args.profile && !call.args.full ? 'lean' : settings.toolProfile);
           signal.throwIfAborted();
