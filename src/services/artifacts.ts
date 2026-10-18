@@ -1,6 +1,7 @@
 import { ArtifactRef } from '../types';
 
 const DB_NAME = 'browser-agent-data';
+const DB_VERSION = 2;
 export const ARTIFACT_MAX_BYTES = 8 * 1024 * 1024;
 const STORE_MAX_BYTES = 64 * 1024 * 1024;
 const TTL = 7 * 86400000;
@@ -8,13 +9,18 @@ let database: Promise<IDBDatabase> | undefined;
 
 export function openDatabase(): Promise<IDBDatabase> {
   if (!database) database = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      db.createObjectStore('artifacts', { keyPath: 'id' });
-      db.createObjectStore('sessions', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('artifacts')) db.createObjectStore('artifacts', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('session_meta')) db.createObjectStore('session_meta', { keyPath: 'id' });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => { db.close(); database = undefined; };
+      resolve(db);
+    };
     request.onerror = () => { database = undefined; reject(request.error); };
     request.onblocked = () => { database = undefined; reject(new Error('Database upgrade blocked. Close other extension pages.')); };
   });

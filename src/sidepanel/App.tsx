@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActiveTabInfo, AppSettings, ChatSession, SettingsTab } from '../types';
+import { ActiveTabInfo, AppSettings, Attachment, ChatSession, SettingsTab } from '../types';
 import { DEFAULT_SETTINGS, deleteChatSession, getChatSession, getChatSessions, getSettings, saveSettings, saveSingleSession } from '../services/storage';
 import { compactSession, runAgent } from '../services/agent';
 import { contextCosts, contextToolCosts, summaryForRollback } from '../services/context';
@@ -128,13 +128,14 @@ export const App: React.FC = () => {
     finally { if (operation.current === op) { operation.current = undefined; setGenerating(false); } }
   };
 
-  const send = async (text: string) => {
+  const send = async (text: string, attachments: Attachment[] = []) => {
     if (!ready || operation.current) return;
     void unlockAudio(); setNotice('');
     const current = sessionRef.current;
     const first = !current.messages.some(m => m.role === 'user');
-    const initial: ChatSession = { ...current, title: first ? text.slice(0, 60) : current.title,
-      messages: [...current.messages, { id: crypto.randomUUID(), role: 'user', content: text, timestamp: Date.now() }] };
+    const title = text || attachments.map(attachment => attachment.name).join(', ');
+    const initial: ChatSession = { ...current, title: first ? title.slice(0, 60) : current.title,
+      messages: [...current.messages, { id: crypto.randomUUID(), role: 'user', content: text, timestamp: Date.now(), attachments: attachments.length ? attachments : undefined }] };
     update(initial, true);
     const op = { id: crypto.randomUUID(), controller: new AbortController() }; operation.current = op; setGenerating(true);
     let targetId = activeTab?.id, targetUrl = activeTab?.url || '';
@@ -187,8 +188,8 @@ export const App: React.FC = () => {
         cancel(true); const current = sessionRef.current; const remaining = current.messages.slice(0, index);
         update({ ...current, messages: remaining, summary: summaryForRollback(current.summary, remaining), updatedAt: Date.now() }, true); setInput(content);
       }} />
-    <MessageInput onSendMessage={text => { void send(text).catch(err => { setNotice(err.message); }); }} onStop={() => cancel()} isGenerating={isGenerating}
-      disabled={!ready} initialText={input} onTextConsumed={() => setInput('')} onExecuteCommand={command} />
+    <MessageInput key={session.id} onSendMessage={(text, attachments) => { void send(text, attachments).catch(err => { setNotice(err.message); }); }} onStop={() => cancel()} isGenerating={isGenerating}
+      disabled={!ready} supportsVision={settings.supportsVision} initialText={input} onTextConsumed={() => setInput('')} onExecuteCommand={command} />
     <ModelSelectorBar settings={settings} usedTokens={costs.total} messageCount={logicalMessageCount(session.messages)}
       costs={costs} toolCosts={contextToolCosts(session)} busy={isGenerating} onTriggerCompact={() => { void compact(); }} onOpenModelSettings={() => openSettings('models')}
       onSelectModel={model => { void save({ ...settings, model }).catch(err => setNotice(err.message)); }} />

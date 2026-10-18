@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatMessage } from '../../src/types';
 import { DEFAULT_SETTINGS } from '../../src/services/storage';
-import { formatAnthropic, formatGemini, formatOpenAI, geminiParameters, LLMClient, sseData } from '../../src/services/llm';
+import { estimateHistoryTokens, formatAnthropic, formatGemini, formatOpenAI, geminiParameters, LLMClient, sseData } from '../../src/services/llm';
 import { envelope } from '../../src/services/budget';
 
 const messages: ChatMessage[] = [
@@ -86,5 +86,47 @@ describe('provider protocol', () => {
   it('does not swallow protocol errors or execute malformed arguments', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([{ error: { message: 'Overloaded' } }])));
     await expect(LLMClient.chat({ ...DEFAULT_SETTINGS, model: 'test', apiKey: 'key' }, messages)).rejects.toThrow('Overloaded');
+  });
+  it('attaches Gemini images to the existing user turn instead of adding a consecutive role', async () => {
+    const mock = vi.fn().mockResolvedValue(response([{ candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] }]));
+    vi.stubGlobal('fetch', mock);
+    await LLMClient.chat({ ...DEFAULT_SETTINGS, provider: 'gemini', model: 'test', apiKey: 'key' }, messages, {}, undefined, { images: [{ mime: 'image/jpeg', data: 'AAAA' }] });
+    const contents = JSON.parse(mock.mock.calls[0][1].body).contents;
+    const last = contents.at(-1);
+    expect(contents.at(-2).role).toBe('model');
+    expect(last.role).toBe('user');
+    expect(last.parts[0].functionResponse).toBeTruthy();
+    expect(last.parts.at(-1).inlineData).toEqual({ mimeType: 'image/jpeg', data: 'AAAA' });
+  });
+  it('attaches Anthropic images to the existing user tool_result turn', async () => {
+    const mock = vi.fn().mockResolvedValue(response([{ type: 'message_start', message: { usage: { input_tokens: 1 } } }, { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } }]));
+    vi.stubGlobal('fetch', mock);
+    await LLMClient.chat({ ...DEFAULT_SETTINGS, provider: 'anthropic', model: 'test', apiKey: 'key' }, messages, {}, undefined, { images: [{ mime: 'image/png', data: 'BBBB' }] });
+    const formatted = JSON.parse(mock.mock.calls[0][1].body).messages;
+    const last = formatted.at(-1);
+    expect(formatted.at(-2).role).toBe('assistant');
+    expect(last.role).toBe('user');
+    expect(last.content[0].type).toBe('tool_result');
+    expect(last.content.at(-1)).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'BBBB' } });
+  });
+  it('includes user attachments in OpenAI, Gemini and Anthropic payloads', () => {
+    const attached: ChatMessage[] = [{ id: 'u', role: 'user', content: 'Look', timestamp: 1, attachments: [
+      { id: 'img', name: 'photo.png', mime: 'image/png', size: 3, kind: 'image', data: 'AQID' },
+      { id: 'txt', name: 'notes.txt', mime: 'text/plain', size: 5, kind: 'text', data: 'hello' },
+    ] }];
+    const openai = formatOpenAI(attached);
+    expect(openai[0].content[0].text).toContain('[Attached file: notes.txt]');
+    expect(openai[0].content.at(-1).image_url.url).toBe('data:image/png;base64,AQID');
+    const gemini = formatGemini(attached);
+    expect(gemini[0].parts[0].text).toContain('hello');
+    expect(gemini[0].parts.at(-1).inlineData).toEqual({ mimeType: 'image/png', data: 'AQID' });
+    const anthropic = formatAnthropic(attached);
+    expect(anthropic[0].content[0].text).toContain('hello');
+    expect(anthropic[0].content.at(-1)).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } });
+  });
+  it('counts user attachments in the context estimate', () => {
+    const plain: ChatMessage[] = [{ id: 'u', role: 'user', content: 'Look', timestamp: 1 }];
+    const attached: ChatMessage[] = [{ ...plain[0], attachments: [{ id: 'img', name: 'photo.png', mime: 'image/png', size: 3, kind: 'image', data: 'AQID' }] }];
+    expect(estimateHistoryTokens(attached)).toBeGreaterThan(estimateHistoryTokens(plain) + 1000);
   });
 });

@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { artifactStats, dbRequest, getArtifact, putArtifact } from '../../src/services/artifacts';
 import { DEFAULT_SETTINGS, getChatSession, getChatSessions, saveSingleSession } from '../../src/services/storage';
 import { executeTool, validateArguments } from '../../src/services/tool-executor';
-import { parseSearchHtml } from '../../src/services/search';
+import { parseSearchHtml, publicUrl } from '../../src/services/search';
 
-beforeEach(async () => { await dbRequest('artifacts', 'readwrite', store => store.clear()); await dbRequest('sessions', 'readwrite', store => store.clear()); });
+beforeEach(async () => {
+  await dbRequest('artifacts', 'readwrite', store => store.clear());
+  await dbRequest('sessions', 'readwrite', store => store.clear());
+  await dbRequest('session_meta', 'readwrite', store => store.clear());
+});
 const context = () => ({ sessionId: 's1', runId: 'r1', signal: new AbortController().signal });
 
 describe('artifacts and execution boundary', () => {
@@ -15,6 +19,11 @@ describe('artifacts and execution boundary', () => {
     const rows = await getChatSessions();
     expect(rows[0].messages).toHaveLength(0); expect(rows[0].messageCount).toBe(2);
     expect((await getChatSession('saved')).messages).toEqual(messages.map(message => ({ ...message, isStreaming: false, toolCalls: undefined })));
+  });
+  it('rebuilds session metadata for transcripts saved before the metadata store existed', async () => {
+    await dbRequest('sessions', 'readwrite', store => store.put({ id: 'legacy', title: 'Legacy', createdAt: 1, updatedAt: 2, messages: [{ id: 'u', role: 'user', content: 'Hi', timestamp: 1 }] }));
+    const rows = await getChatSessions();
+    expect(rows.find(row => row.id === 'legacy')?.messageCount).toBe(1);
   });
   it('stores image bytes with a digest; prevents cross-chat access', async () => {
     const ref = await putArtifact(new Blob(['image bytes'], { type: 'image/png' }), 'screen.png', 's1');
@@ -33,6 +42,21 @@ describe('artifacts and execution boundary', () => {
   it('validates tool args before sending browser commands', () => {
     expect(() => validateArguments('devtools_click_element', {})).toThrow('selector');
     expect(() => validateArguments('devtools_evaluate_js', { code: '1', full: 'yes' })).toThrow('type');
+  });
+  it('ignores null optional arguments and validates array item types', () => {
+    const args = { cursor: null, limit: null };
+    expect(() => validateArguments('devtools_get_page_summary', args)).not.toThrow();
+    expect(args).toEqual({});
+    expect(() => validateArguments('devtools_click_element', { selector: null })).toThrow('selector');
+    expect(() => validateArguments('devtools_evaluate_js', { code: '1', projection: [123] })).toThrow('array item');
+  });
+  it('blocks private and loopback hosts for public fetches but keeps local tabs usable', () => {
+    expect(() => publicUrl('http://127.0.0.1:8080', { allowPrivate: false })).toThrow('private');
+    expect(() => publicUrl('http://localhost:3000', { allowPrivate: false })).toThrow('private');
+    expect(() => publicUrl('http://192.168.1.1', { allowPrivate: false })).toThrow('private');
+    expect(() => publicUrl('http://[::1]/', { allowPrivate: false })).toThrow('private');
+    expect(publicUrl('http://localhost:3000')).toBe('http://localhost:3000/');
+    expect(publicUrl('https://example.test', { allowPrivate: false })).toBe('https://example.test/');
   });
   it('reads large JSON through stable slices and reports more data', async () => {
     const ref = await putArtifact(new Blob([JSON.stringify(Array.from({ length: 50 }, (_, i) => ({ id: i })))], { type: 'application/json' }), 'rows.json', 's1');

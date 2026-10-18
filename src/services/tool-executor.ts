@@ -13,17 +13,24 @@ export function validateArguments(name: string, args: any) {
   const definition = TOOLS.find(t => t.name === name);
   if (!definition) throw new Error(`Unknown tool: ${name}`);
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Arguments must be an object');
-  for (const key of definition.parameters.required || []) if (args[key] === undefined) throw new Error(`Required argument: ${key}`);
+  const required = new Set(definition.parameters.required || []);
+  for (const key of required) if (args[key] == null) throw new Error(`Required argument: ${key}`);
   for (const [key, value] of Object.entries(args)) {
-    const schema = definition.parameters.properties[key];
     if (!Object.hasOwn(definition.parameters.properties, key)) throw new Error(`Unknown argument: ${key}`);
+    if (value === null || value === undefined) {
+      if (required.has(key)) throw new Error(`Required argument: ${key}`);
+      delete args[key];
+      continue;
+    }
+    const schema = definition.parameters.properties[key];
     let normalized = value;
     if (schema.type === 'object' && typeof value === 'string') { try { normalized = JSON.parse(value); } catch { throw new Error(`Invalid JSON object for ${key}`); } }
     if ((schema.type === 'array' && !Array.isArray(normalized)) || (schema.type === 'object' && (normalized == null || typeof normalized !== 'object' || Array.isArray(normalized)))
       || (['string', 'number', 'boolean'].includes(schema.type) && typeof normalized !== schema.type)) throw new Error(`Invalid type for ${key}`);
+    if (schema.type === 'array' && schema.items?.type && !(normalized as any[]).every((item: any) => typeof item === schema.items.type)) throw new Error(`Invalid array item type for ${key}`);
     args[key] = normalized;
-    if (schema.enum && !schema.enum.includes(value)) throw new Error(`Invalid value for ${key}`);
-    if (schema.type === 'number' && !Number.isFinite(value)) throw new Error(`Invalid number for ${key}`);
+    if (schema.enum && !schema.enum.includes(normalized)) throw new Error(`Invalid value for ${key}`);
+    if (schema.type === 'number' && !Number.isFinite(normalized)) throw new Error(`Invalid number for ${key}`);
   }
   return definition;
 }
@@ -166,9 +173,10 @@ export async function executeTool(name: string, args: any, settings: AppSettings
         if (args.mode === 'text') { result = await devtools.getPageSummary(id); break; }
         if (args.mode === 'a11y') { result = await devtools.sendCommand(id, 'Accessibility.getFullAXTree'); break; }
         if (args.frameId) throw new Error('Frame-local screenshot regions require a child-session Page.captureScreenshot via devtools_cdp');
+        const targetBox = args.selector ? await devtools.box(id, args.selector, args.frameId) : undefined;
         const metrics = await devtools.sendCommand(id, 'Page.getLayoutMetrics');
         const viewport = metrics.cssVisualViewport || metrics.visualViewport;
-        const region = args.selector ? await devtools.box(id, args.selector, args.frameId) : { left: viewport.pageX, top: viewport.pageY, width: viewport.clientWidth, height: viewport.clientHeight };
+        const region = targetBox || { left: viewport.pageX, top: viewport.pageY, width: viewport.clientWidth, height: viewport.clientHeight };
         const scale = Math.min(1, Math.max(200, Math.min(2000, args.maxWidth || 1000)) / region.width);
         const image = await devtools.sendCommand(id, 'Page.captureScreenshot', { format: 'jpeg', quality: Math.max(20, Math.min(90, args.quality || 45)),
           clip: { x: region.left + (args.selector ? viewport.pageX : 0), y: region.top + (args.selector ? viewport.pageY : 0), width: region.width, height: region.height, scale }, captureBeyondViewport: false });

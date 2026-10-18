@@ -88,6 +88,70 @@ function sanitizeLegacyMessages(messages: ChatMessage[]): ChatMessage[] {
   }));
 }
 
+type SessionMeta = Pick<ChatSession, 'id' | 'title' | 'createdAt' | 'updatedAt'> & { messageCount: number };
+
+function sessionMeta(session: ChatSession): SessionMeta {
+  return { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt, messageCount: logicalMessageCount(session.messages || []) };
+}
+
+async function putSession(session: ChatSession): Promise<void> {
+  const db = await openDatabase();
+  const value = { ...session, version: 2 };
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['sessions', 'session_meta'], 'readwrite');
+    tx.objectStore('sessions').put(value);
+    tx.objectStore('session_meta').put(sessionMeta(value));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+async function readSessionMetas(): Promise<SessionMeta[]> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('session_meta');
+    const request = tx.objectStore('session_meta').getAll();
+    tx.oncomplete = () => resolve(request.result as SessionMeta[]);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+async function rebuildSessionMetas(): Promise<SessionMeta[]> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const rows: SessionMeta[] = [];
+    const tx = db.transaction(['sessions', 'session_meta'], 'readwrite');
+    const metaStore = tx.objectStore('session_meta');
+    metaStore.clear();
+    const request = tx.objectStore('sessions').openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const row = cursor.value as ChatSession;
+      const meta = sessionMeta(row);
+      rows.push(meta);
+      metaStore.put(meta);
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve(rows);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+async function sessionIds(): Promise<string[]> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('sessions');
+    const request = tx.objectStore('sessions').getAllKeys();
+    tx.oncomplete = () => resolve((request.result as IDBValidKey[]).map(String));
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 export async function getChatSessions(): Promise<ChatSession[]> {
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     const migration = await chrome.storage.local.get('browser_agent_sessions_migrated');
@@ -96,27 +160,17 @@ export async function getChatSessions(): Promise<ChatSession[]> {
       const legacy: ChatSession[] = data[SESSIONS_KEY] || data.chromium_agent_sessions || [];
       for (const session of legacy) {
         const existing = await dbRequest<ChatSession | undefined>('sessions', 'readonly', store => store.get(session.id));
-        if (!existing) await dbRequest('sessions', 'readwrite', store => store.put({ ...session, messages: sanitizeLegacyMessages(session.messages || []), version: 2 }));
+        if (!existing) await putSession({ ...session, messages: sanitizeLegacyMessages(session.messages || []) });
       }
       await chrome.storage.local.set({ browser_agent_sessions_migrated: true });
     }
   }
-  // List metadata only. Loading every transcript on each autosave wastes memory and deserialization time.
-  const db = await openDatabase();
-  const sessions = await new Promise<ChatSession[]>((resolve, reject) => {
-    const rows: ChatSession[] = [], tx = db.transaction('sessions');
-    const request = tx.objectStore('sessions').openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        const row: ChatSession = cursor.value;
-        rows.push({ id: row.id, title: row.title, createdAt: row.createdAt, updatedAt: row.updatedAt, messages: [], messageCount: logicalMessageCount(row.messages), version: row.version });
-        cursor.continue();
-      }
-    };
-    tx.oncomplete = () => resolve(rows); tx.onerror = () => reject(tx.error);
-  });
-  return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+  // Metadata lives in its own store so listing sessions never deserializes full transcripts.
+  let metas = await readSessionMetas();
+  const ids = await sessionIds();
+  const known = new Set(metas.map(meta => meta.id));
+  if (ids.length !== metas.length || ids.some(id => !known.has(id))) metas = await rebuildSessionMetas();
+  return metas.map(meta => ({ ...meta, messages: [], version: 2 })).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function getChatSession(id: string): Promise<ChatSession> {
@@ -131,7 +185,7 @@ export async function getChatSession(id: string): Promise<ChatSession> {
 }
 
 export async function saveSingleSession(session: ChatSession): Promise<void> {
-  await dbRequest('sessions', 'readwrite', store => store.put({ ...session, version: 2 }));
+  await putSession(session);
 }
 
 export async function saveChatSessions(sessions: ChatSession[]): Promise<void> {
@@ -139,6 +193,14 @@ export async function saveChatSessions(sessions: ChatSession[]): Promise<void> {
 }
 
 export async function deleteChatSession(id: string): Promise<void> {
-  await dbRequest('sessions', 'readwrite', store => store.delete(id));
+  const db = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['sessions', 'session_meta'], 'readwrite');
+    tx.objectStore('sessions').delete(id);
+    tx.objectStore('session_meta').delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
   await pruneArtifacts(id);
 }

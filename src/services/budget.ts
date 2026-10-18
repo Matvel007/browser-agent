@@ -30,6 +30,11 @@ function redactCredentials(text: string): string {
     .replace(/([?&](?:api[_-]?key|token|access_token|secret|password)=)[^&#\s]*/gi, '$1[redacted]')
     .replace(/\b(?:sk-|tvly-)[a-z\d_-]{16,}/gi, '[redacted API key]')
     .replace(/\bAIza[a-z\d_-]{30,}/g, '[redacted API key]')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[redacted GitHub token]')
+    .replace(/\bglpat-[A-Za-z0-9_-]{20,}\b/g, '[redacted GitLab token]')
+    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '[redacted Slack token]')
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[redacted AWS key]')
+    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[redacted JWT]')
     .replace(/(["'](?:password|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret)["']\s*:\s*["'])[^"']*(["'])/gi, '$1[redacted]$2');
 }
 

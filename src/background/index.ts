@@ -91,14 +91,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!run) { run = { controller: new AbortController(), sessionId: payload.sessionId, tabId: payload.tabId, touched: now }; runs.set(payload.runId, run); }
         if (run.sessionId !== payload.sessionId) throw new Error('Run/session mismatch');
         run.touched = now;
-        const deadline = setTimeout(() => run!.controller.abort(), 45000);
-        try {
-          const result = await executeTool(payload.toolName, payload.args || {}, await getSettings(), { tabId: run.tabId, sessionId: run.sessionId, runId: payload.runId, signal: run.controller.signal,
-            history: payload.toolName === 'history_read' && Array.isArray(payload.history) ? payload.history : undefined });
-          if (payload.toolName === 'browser_tabs' && result.ok && result.data?.selectedTabId != null) run.tabId = result.data.selectedTabId;
-          if (payload.toolName === 'browser_tabs' && result.ok && result.data?.closedTabId === run.tabId) run.tabId = undefined;
-          return { result };
-        } finally { clearTimeout(deadline); }
+        const stepSignal = AbortSignal.any([run.controller.signal, AbortSignal.timeout(45000)]);
+        const result = await executeTool(payload.toolName, payload.args || {}, await getSettings(), { tabId: run.tabId, sessionId: run.sessionId, runId: payload.runId, signal: stepSignal,
+          history: payload.toolName === 'history_read' && Array.isArray(payload.history) ? payload.history : undefined });
+        if (payload.toolName === 'browser_tabs' && result.ok && result.data?.selectedTabId != null) run.tabId = result.data.selectedTabId;
+        if (payload.toolName === 'browser_tabs' && result.ok && result.data?.closedTabId === run.tabId) run.tabId = undefined;
+        return { result };
       })()); break;
     }
     default: return;

@@ -1,13 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, Copy, Undo2 } from 'lucide-react';
-import { ChatMessage } from '../../types';
+import { ChevronDown, Copy, FileText, Undo2 } from 'lucide-react';
+import { Attachment, ChatMessage } from '../../types';
+import { attachmentDataUrl, formatBytes } from '../../services/attachments';
 import { i18n, tr } from '../../services/i18n';
 import { ToolStepCard } from './ToolStepCard';
 import { groupTranscript } from '../../services/transcript';
 import { TOOLS, toolLabel } from '../../services/tools';
 import { AgentLogo } from './AgentLogo';
+
+const Attachments: React.FC<{ attachments: Attachment[] }> = ({ attachments }) => {
+  if (!attachments.length) return null;
+  return <div className="message-attachments">{attachments.map(attachment => attachment.kind === 'image'
+    ? <div className="message-attachment image" key={attachment.id}><img src={attachmentDataUrl(attachment)} alt={attachment.name} /><small title={attachment.name}>{attachment.name} · {formatBytes(attachment.size)}</small></div>
+    : <span className="message-attachment" key={attachment.id}><FileText size={14} /><span title={attachment.name}>{attachment.name}</span><small>{formatBytes(attachment.size)}</small></span>)}</div>;
+};
 
 interface Props { messages: ChatMessage[]; sessionId?: string; isGenerating: boolean; onOpenSettings?: () => void; onRollback?: (index: number, content: string) => void }
 export const MessageList: React.FC<Props> = ({ messages, sessionId, isGenerating, onOpenSettings, onRollback }) => {
@@ -42,6 +50,7 @@ export const MessageList: React.FC<Props> = ({ messages, sessionId, isGenerating
           }}>{copied === group.id ? tr('Скопировано', 'Copied') : <Copy size={14} />}</button>}
           {group.role === 'user' && onRollback && <button type="button" disabled={isGenerating} aria-label={tr('Редактировать с этого сообщения', 'Edit from this message')} onClick={() => onRollback(group.index, content)}><Undo2 size={14} /></button>}
         </div></header>
+        {group.role === 'user' && <Attachments attachments={parts.flatMap(message => message.attachments || [])} />}
         {!!calls.length && <details className="action-summary">
           <summary><span>{tr('Свод действий', 'Actions')} · {calls.length}</span><small>{summary}</small><ChevronDown size={14} /></summary>
           <div className="action-steps">{calls.map(call => <ToolStepCard key={call.id} toolCall={call} sessionId={sessionId} />)}

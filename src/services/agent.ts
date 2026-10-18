@@ -30,7 +30,7 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
   const runId = crypto.randomUUID();
   let currentMessage: ChatMessage | undefined;
   let images: NonNullable<ChatOptions['images']> = [];
-  let executed = 0;
+  let executed = 0, outputRetry = 0;
   const publish = () => { session = { ...session, updatedAt: Date.now() }; hooks.update(session); };
   const replace = (message: ChatMessage, chunk = false) => {
     currentMessage = message;
@@ -38,7 +38,7 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
     if (chunk) hooks.chunk(session); else hooks.update(session);
   };
   try {
-    for (let step = 0; settings.maxStepsEnabled === false || step <= settings.maxSteps + 1; step++) {
+    for (let step = 0; settings.maxStepsEnabled === false || step <= settings.maxSteps + 1 + outputRetry; step++) {
       signal.throwIfAborted();
       const live = await (hooks.settings || getSettings)();
       // Provider and model are fixed for this run; tool toggles and output budget are refreshed each step.
@@ -74,8 +74,23 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
           } else assistant = { ...assistant, status: finalStatus };
           replace(assistant); return session;
         }
+        const lengthLimited = /length|max_tokens|MAX_TOKENS/i.test(result.finishReason || '');
+        if (lengthLimited && outputRetry < 2) {
+          const available = Math.max(0, settings.maxContextTokens - costs.input);
+          const nextLimit = Math.max(settings.maxOutputTokens, Math.min(settings.maxOutputTokens * 2, 32768, Math.floor(settings.maxContextTokens / 3), available));
+          if (nextLimit > settings.maxOutputTokens) {
+            outputRetry++;
+            settings = { ...settings, maxOutputTokens: nextLimit };
+            terminal = true;
+            continue;
+          }
+        }
         if (!terminal) { terminal = true; continue; }
-        throw new Error(tr('Модель не вернула итоговый текст.', 'The model returned no final text.'));
+        assistant = { ...assistant, status: 'limit', content: lengthLimited || result.reasoning
+          ? tr('Модель израсходовала лимит вывода на внутренние рассуждения и не вернула текст. Увеличьте «Максимальный вывод» в настройках модели или выберите модель без режима рассуждений.', 'The model used its output budget on internal reasoning and returned no text. Increase "Max output tokens" in model settings or choose a model without reasoning mode.')
+          : tr('Модель завершила ответ без текста. Попробуйте повторить запрос или выбрать другую модель.', 'The model finished without returning text. Try again or choose another model.') };
+        replace(assistant);
+        return session;
       }
       if (finalize) {
         replace({ ...assistant, toolCalls: result.toolCalls.map(call => ({ ...call, status: 'cancelled' })), content: assistant.content || tr('Достигнут лимит шагов. Новые действия не выполнялись.', 'Step limit reached. No new actions were run.'), status: 'limit' });
@@ -100,9 +115,10 @@ export async function runAgent(settings: AppSettings, initial: ChatSession, sign
             if (settings.supportsVision && images.length < 2) {
               const row = await getArtifact(call.result.artifact.id, session.id);
               if (row.bytes <= 2 * 1024 * 1024) {
-              const bytes = new Uint8Array(await row.blob.arrayBuffer()); let binary = '';
-              for (const byte of bytes) binary += String.fromCharCode(byte);
-              images.push({ mime: row.mime, data: btoa(binary) });
+                const bytes = new Uint8Array(await row.blob.arrayBuffer());
+                const chunks: string[] = [];
+                for (let offset = 0; offset < bytes.length; offset += 0x8000) chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
+                images.push({ mime: row.mime, data: btoa(chunks.join('')) });
                 attached = true; note = 'Image is attached separately to the next model request.';
               } else note = 'Image exceeds the 2 MiB vision attachment limit. Request a smaller region/quality.';
             }

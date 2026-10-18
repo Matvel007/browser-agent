@@ -95,11 +95,21 @@ export interface ToolCallRecord {
   providerData?: any;
 }
 
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: 'image' | 'text';
+  data: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp: number;
+  attachments?: Attachment[];
   toolCalls?: ToolCallRecord[];
   isStreaming?: boolean;
   isCompressionCard?: boolean;

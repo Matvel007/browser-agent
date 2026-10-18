@@ -84,7 +84,7 @@ export class DevToolsService {
           type: params.type, timestamp: Date.now(), startedAt: params.timestamp, frameId: params.frameId,
           requestHeaders: projectValue(req.headers, 'full').data, postData: req.postData?.slice(0, 16000) }, 500);
       }
-      const row = params.requestId && this.findRequest(tabId, params.requestId, source.sessionId);
+      const row = params.requestId && method.startsWith('Network.') ? this.findRequest(tabId, params.requestId, source.sessionId) : undefined;
       if (row && method === 'Network.responseReceived') {
         row.status = params.response?.status; row.mimeType = params.response?.mimeType;
         row.responseHeaders = projectValue(params.response?.headers, 'full').data;
@@ -102,7 +102,7 @@ export class DevToolsService {
   }
 
   private findRequest(tabId: number, id: string, sessionId?: string) {
-    return [...(this.requests.get(tabId) || [])].reverse().find(r => r.requestId === id && r.sessionId === sessionId);
+    return (this.requests.get(tabId) || []).findLast(r => r.requestId === id && r.sessionId === sessionId);
   }
 
   isAttached(tabId: number) { return this.attached.has(tabId); }
@@ -148,7 +148,9 @@ export class DevToolsService {
     const contextId = frameId ? this.contexts.get(tabId)?.get(frameId) : undefined;
     if (frameId && contextId == null) throw new Error('Frame context unavailable. Use Page.getFrameTree / child session with devtools_cdp.');
     const script = `(async () => {
-      const value = await (${expression});
+      const value = await (
+        ${expression}
+      );
       const paths = ${JSON.stringify(projection || [])};
       const pick = item => Object.fromEntries(paths.map(path => [path, path.split('.').reduce((v,k)=>v?.[k],item)]));
       const selected = paths.length ? (Array.isArray(value) ? value.slice(0,2000).map(pick) : pick(value)) : value;

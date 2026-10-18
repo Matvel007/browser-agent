@@ -51,3 +51,10 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# Promotional banners and store assets
+promo*.png
+docs/promo*.png
+
+# Local working notes (not part of the repository)
+CHANGELOG.md

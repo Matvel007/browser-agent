@@ -70,9 +70,26 @@ summary { cursor:pointer; padding:6px 0; }
 .progress-notes p { margin:6px 0; white-space:pre-wrap; }
 .artifact { display:grid; gap:8px; border-top:1px solid var(--agent-border); padding-top:8px; }
 .artifact img { max-width:100%; height:auto; border:1px solid var(--agent-border); }
-.composer { flex:none; position:relative; display:flex; gap:6px; align-items:flex-end; padding:8px 10px; border-top:1px solid var(--agent-border); }
+.composer { flex:none; position:relative; padding:8px 10px; border-top:1px solid var(--agent-border); }
+.composer-body { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.composer-row { display:flex; gap:6px; align-items:flex-end; min-width:0; }
 .composer textarea { flex:1; border:0; background:transparent; resize:none; padding:7px 0; max-height:160px; }
 .composer textarea:focus { outline:0; }
+.attach-button { border:1px solid var(--agent-border); width:34px; height:34px; flex:none; }
+.attachment-list { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
+.attachment-chip { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; padding:3px 4px 3px 7px; border:1px solid var(--agent-border); background:var(--agent-surface); font-size:11px; }
+.attachment-chip img { width:24px; height:24px; object-fit:cover; border:1px solid var(--agent-border); flex:none; }
+.attachment-chip>span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.attachment-chip small { flex:none; }
+.attachment-chip button { min-width:22px; min-height:22px; border:0; padding:0; flex:none; }
+.composer-error { display:block; }
+.message-attachments { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 8px; }
+.message-attachment { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; padding:3px 7px; border:1px solid var(--agent-border); background:var(--agent-surface); font-size:11px; }
+.message-attachment>span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.message-attachment small { flex:none; }
+.message-attachment.image { flex-direction:column; align-items:flex-start; gap:4px; padding:4px; }
+.message-attachment.image img { width:96px; height:96px; object-fit:cover; border:1px solid var(--agent-border); }
+.message-attachment.image small { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .send-button { border:1px solid var(--agent-border); width:34px; height:34px; flex:none; }
 .command-menu { position:absolute; bottom:100%; left:8px; right:8px; z-index:20; max-height:260px; overflow:auto; border:1px solid var(--agent-border); background:var(--agent-bg); padding:4px; }
 .command-menu button { display:flex; width:100%; justify-content:flex-start; gap:12px; padding:7px; text-align:left; font-size:12px; }

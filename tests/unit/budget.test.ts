@@ -29,6 +29,19 @@ describe('bounded output contracts', () => {
     expect(data.password).toBe('[redacted]');
     expect(data.url).not.toContain('=secret');
   });
+  it('redacts common provider tokens in text and artifacts', () => {
+    const tokens = [
+      'ghp_' + 'a'.repeat(30),
+      'glpat-' + 'b'.repeat(25),
+      'xoxb-' + '1-'.repeat(6) + 'c',
+      'AKIA' + 'A'.repeat(16),
+      'eyJ' + 'a'.repeat(12) + '.' + 'b'.repeat(12) + '.' + 'c'.repeat(12),
+    ];
+    for (const token of tokens) {
+      expect(serializeArtifact({ value: token })).not.toContain(token);
+      expect(envelope({ value: token }).data.value).not.toContain(token);
+    }
+  });
   it('redacts common header names and camel-case token fields', () => {
     const input = { 'X-API-Key': 'private-key', accessToken: 'private-access', token: 'private-token', 'Proxy-Authorization': 'private-proxy', cookies: [{ name: 'session', domain: '.test', path: '/', value: 'private-cookie' }] };
     expect(JSON.stringify(envelope(input))).not.toContain('private-');

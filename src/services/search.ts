@@ -18,9 +18,32 @@ export async function readResponse(response: Response, maxBytes = 2 * 1024 * 102
   } finally { reader.releaseLock(); }
 }
 
-export function publicUrl(value: string) {
+function isPrivateIpv4(a: number, b: number, c: number) {
+  return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 192 && b === 0 && c === 0) || (a === 198 && (b === 18 || b === 19));
+}
+
+function isPrivateHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return true;
+  if (host === '::' || host === '::1' || host === '0.0.0.0') return true;
+  const mapped = /^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (mapped) {
+    const hi = parseInt(mapped[1], 16), lo = parseInt(mapped[2], 16);
+    return isPrivateIpv4((hi >>> 8) & 255, hi & 255, (lo >>> 8) & 255);
+  }
+  const v4 = host.split('.');
+  if (v4.length === 4 && v4.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255)) {
+    return isPrivateIpv4(Number(v4[0]), Number(v4[1]), Number(v4[2]));
+  }
+  if (/^(fc|fd)[0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return true;
+  return false;
+}
+
+export function publicUrl(value: string, options: { allowPrivate?: boolean } = {}) {
   const url = new URL(value);
   if (!/^https?:$/.test(url.protocol) || url.username || url.password) throw new Error('Expected an HTTP(S) URL without credentials');
+  if (options.allowPrivate === false && isPrivateHost(url.hostname)) throw new Error('Access to local or private network hosts is blocked');
   return url.href;
 }
 
@@ -64,7 +87,8 @@ export async function webSearch(settings: AppSettings, args: any, signal: AbortS
 }
 
 export async function webRead(args: any, signal: AbortSignal) {
-  const response = await fetch(publicUrl(args.url), { signal, credentials: 'omit' });
+  const response = await fetch(publicUrl(args.url, { allowPrivate: false }), { signal, credentials: 'omit' });
+  if (response.url) publicUrl(response.url, { allowPrivate: false });
   const type = response.headers.get('content-type') || '';
   if (!/text\/|json|xml/.test(type)) throw new Error('Not a readable text resource');
   const text = await readResponse(response);

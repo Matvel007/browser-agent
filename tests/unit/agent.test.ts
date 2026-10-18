@@ -72,6 +72,27 @@ describe('history and agent lifecycle', () => {
     const custom = 'You are Browser Agent, a neutral and precise AI browser assistant.\nMy custom instructions.';
     expect(migrateSettings({ systemPrompt: custom }).systemPrompt).toBe(custom);
   });
+  it('retries an empty length-limited response with a larger output budget', async () => {
+    const retrySettings = { ...DEFAULT_SETTINGS, model: 'test', apiKey: 'key', maxSteps: 5, maxContextTokens: 64000 };
+    const chat = vi.spyOn(LLMClient, 'chat')
+      .mockResolvedValueOnce({ content: '', finishReason: 'length', usage: { input: 100, output: 4096, estimated: false } })
+      .mockResolvedValueOnce({ content: '', finishReason: 'length', usage: { input: 100, output: 4096, estimated: false } })
+      .mockResolvedValueOnce({ content: 'Final answer', finishReason: 'stop', usage: { input: 100, output: 10, estimated: false } });
+    const session = await runAgent(retrySettings, initial(), new AbortController().signal, { update() {}, chunk() {}, execute: vi.fn(), settings: async () => retrySettings }, false);
+    expect(chat).toHaveBeenCalledTimes(3);
+    const budgets = chat.mock.calls.map(call => (call[0] as any).maxOutputTokens);
+    expect(budgets[1]).toBeGreaterThan(budgets[0]);
+    expect(budgets[2]).toBeGreaterThan(budgets[1]);
+    expect(session.messages.at(-1)?.content).toBe('Final answer');
+  });
+  it('returns a limit message instead of throwing when the model keeps returning no text', async () => {
+    const retrySettings = { ...DEFAULT_SETTINGS, model: 'test', apiKey: 'key', maxSteps: 5, maxContextTokens: 64000 };
+    const chat = vi.spyOn(LLMClient, 'chat').mockResolvedValue({ content: '', finishReason: 'length', usage: { input: 100, output: 4096, estimated: false } });
+    const session = await runAgent(retrySettings, initial(), new AbortController().signal, { update() {}, chunk() {}, execute: vi.fn(), settings: async () => retrySettings }, false);
+    expect(chat).toHaveBeenCalledTimes(3);
+    expect(session.messages.at(-1)?.status).toBe('limit');
+    expect(session.messages.at(-1)?.content).toBeTruthy();
+  });
   it('allows steps beyond maxSteps when maxStepsEnabled is false', async () => {
     const noLimitSettings = { ...settings, maxSteps: 1, maxStepsEnabled: false };
     const chat = vi.spyOn(LLMClient, 'chat')
