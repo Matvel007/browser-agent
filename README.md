@@ -35,6 +35,18 @@
 
 ---
 
+## What you can use it for
+
+- **Website analysis** — inspect the DOM, open Shadow DOM, iframes, console errors, network requests and performance metrics to understand how a page works.
+- **Network and API debugging** — see failed 4xx/5xx requests, inspect request/response metadata, and block or mock API responses to test UI behavior.
+- **QA and bug reports** — reproduce a scenario, capture console and network evidence, and get a structured report with a likely cause and fix.
+- **Workflow automation** — fill forms, click through dashboards, switch tabs and repeat routine steps, with optional confirmation before dangerous actions.
+- **Data extraction** — pull tables, cards and lists into structured JSON or CSV artifacts for further use.
+- **Reading and research** — summarize a page or link, explain selected text, translate fragments and compare up to five tabs.
+- **Developer tools** — evaluate JavaScript, inspect storage and cookies, set breakpoints and use raw CDP commands when high-level tools are not enough.
+
+---
+
 ## Features
 
 - **Any provider** — RouterAI, AItunnel, OpenAI, DeepSeek, Google Gemini, Anthropic, or any OpenAI-compatible endpoint (OpenRouter, Groq, Ollama).
