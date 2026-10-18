@@ -9,24 +9,63 @@ const lastTargets = new Map<number, number>();
 const PENDING_CONTEXT_KEY = 'browser_agent_pending_context';
 type PendingContext = { action: 'explain' | 'translate' | 'summarize'; text?: string; url?: string; pageUrl?: string; frameId?: number; tabId?: number; createdAt: number };
 let widgetUpdates = Promise.resolve();
+const tabOrigins = new Map<number, string>();
 
 async function storePendingContext(value: PendingContext) {
   const storage = chrome.storage.session || chrome.storage.local;
   await storage.set({ [PENDING_CONTEXT_KEY]: value });
 }
+function ensureWidget(tabId: number) {
+  void chrome.tabs.sendMessage(tabId, { action: 'WIDGET_PING' }).catch(() => {
+    void chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }).catch(() => {});
+  });
+}
+function rememberOrigin(tabId: number, url?: string) {
+  try { const origin = new URL(url || '').origin; if (origin) tabOrigins.set(tabId, origin); } catch {}
+}
+function ensureActiveWidgets() {
+  return chrome.tabs.query({ active: true }).then(tabs => {
+    for (const tab of tabs) if (tab.id != null && /^https?:/.test(tab.url || '')) ensureWidget(tab.id);
+  });
+}
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
-  void chrome.tabs.get(tabId).then(tab => { if (/^https?:/.test(tab.url || '')) lastTargets.set(windowId, tabId); }).catch(() => {});
+  void chrome.tabs.get(tabId).then(tab => {
+    if (/^https?:/.test(tab.url || '')) { lastTargets.set(windowId, tabId); rememberOrigin(tabId, tab.url); ensureWidget(tabId); }
+  }).catch(() => {});
 });
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    let origin = '';
+    try { origin = new URL(changeInfo.url).origin; } catch {}
+    if (origin && tabOrigins.has(tabId) && tabOrigins.get(tabId) !== origin) void chrome.storage.session?.remove(`widget_hidden_${tabId}`);
+    if (origin) tabOrigins.set(tabId, origin);
+  }
+  if (changeInfo.status === 'complete' && /^https?:/.test(tab.url || '')) ensureWidget(tabId);
+});
+void ensureActiveWidgets().catch(() => {});
+chrome.runtime.onStartup.addListener(() => { void ensureActiveWidgets().catch(() => {}); });
 
+let menuUpdate = Promise.resolve();
 function createContextMenus(lang: 'ru' | 'en') {
   const ru = lang === 'ru';
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'open_browser_agent', title: ru ? 'Открыть Browser Agent' : 'Open Browser Agent', contexts: ['page', 'editable'] });
-    chrome.contextMenus.create({ id: 'explain_selection', title: ru ? 'Объяснить выделенное' : 'Explain selection', contexts: ['selection'] });
-    chrome.contextMenus.create({ id: 'translate_selection', title: ru ? 'Перевести выделенное' : 'Translate selection', contexts: ['selection'] });
-    chrome.contextMenus.create({ id: 'summarize_link', title: ru ? 'Суммировать ссылку' : 'Summarize link', contexts: ['link'] });
-    chrome.contextMenus.create({ id: 'summarize_page', title: ru ? 'Суммировать страницу' : 'Summarize page', contexts: ['page'] });
-  });
+  menuUpdate = menuUpdate.catch(() => {}).then(() => new Promise<void>(resolve => {
+    chrome.contextMenus.removeAll(() => {
+      void chrome.runtime.lastError;
+      const items: chrome.contextMenus.CreateProperties[] = [
+        { id: 'open_browser_agent', title: ru ? 'Открыть Browser Agent' : 'Open Browser Agent', contexts: ['page', 'editable'] },
+        { id: 'explain_selection', title: ru ? 'Объяснить выделенное' : 'Explain selection', contexts: ['selection'] },
+        { id: 'translate_selection', title: ru ? 'Перевести выделенное' : 'Translate selection', contexts: ['selection'] },
+        { id: 'summarize_link', title: ru ? 'Суммировать ссылку' : 'Summarize link', contexts: ['link'] },
+        { id: 'summarize_page', title: ru ? 'Суммировать страницу' : 'Summarize page', contexts: ['page'] },
+      ];
+      let pending = items.length;
+      for (const item of items) {
+        const done = () => { void chrome.runtime.lastError; if (--pending === 0) resolve(); };
+        try { chrome.contextMenus.create(item, done); } catch { done(); }
+      }
+    });
+  }));
+  return menuUpdate;
 }
 void getSettings().then(settings => createContextMenus(resolveLanguage(settings.language))).catch(() => createContextMenus(resolveLanguage()));
 
@@ -34,15 +73,17 @@ chrome.runtime.onInstalled.addListener(() => {
   void chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(console.warn);
   void getSettings().then(settings => createContextMenus(resolveLanguage(settings.language))).catch(() => createContextMenus(resolveLanguage()));
   void chrome.storage.local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(console.warn);
+  void chrome.storage.local.remove('browser_agent_widget_position').catch(console.warn);
   if (chrome.storage.session) widgetUpdates = widgetUpdates.then(() => chrome.storage.session.get(null)).then(state => chrome.storage.session.remove(Object.keys(state).filter(key => key.startsWith('widget_hidden_')))).catch(console.warn);
 });
 
-async function openPanel(windowId?: number) {
+async function openPanel(windowId?: number, sourceTabId?: number) {
   if (chrome.sidePanel?.open && windowId != null) {
     try { return await chrome.sidePanel.open({ windowId }); }
     catch (err) { console.warn('sidePanel.open failed, opening a tab instead', err); }
   }
-  return chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
+  const url = chrome.runtime.getURL('sidepanel.html') + (sourceTabId != null ? `?sourceTabId=${sourceTabId}` : '');
+  return chrome.tabs.create({ url });
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.browser_agent_settings) return;
@@ -58,10 +99,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     await Promise.all(tabs.filter(tab => tab.id != null).map(tab => chrome.tabs.sendMessage(tab.id!, { action: 'WIDGET_VISIBILITY', enabled: after.widgetEnabled !== false }).catch(() => {})));
   }).catch(console.warn);
 });
-chrome.tabs.onRemoved.addListener(id => { void chrome.storage.session?.remove(`widget_hidden_${id}`); });
-chrome.action.onClicked.addListener(tab => { void openPanel(tab.windowId).catch(console.warn); });
+chrome.tabs.onRemoved.addListener(id => { tabOrigins.delete(id); void chrome.storage.session?.remove(`widget_hidden_${id}`); });
+chrome.action.onClicked.addListener(tab => { void openPanel(tab.windowId, tab.id).catch(console.warn); });
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'open_browser_agent' || info.menuItemId === 'open_devtools_copilot') { void openPanel(tab?.windowId).catch(console.warn); return; }
+  if (info.menuItemId === 'open_browser_agent' || info.menuItemId === 'open_devtools_copilot') { void openPanel(tab?.windowId, tab?.id).catch(console.warn); return; }
   const summarizePage = info.menuItemId === 'summarize_page';
   const action = info.menuItemId === 'explain_selection' ? 'explain' : info.menuItemId === 'translate_selection' ? 'translate'
     : info.menuItemId === 'summarize_link' || summarizePage ? 'summarize' : null;
@@ -69,7 +110,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const payload: PendingContext = { action, text: (info.selectionText || '').slice(0, 8000),
     url: (summarizePage ? (info.pageUrl || tab?.url || '') : (info.linkUrl || '')).slice(0, 4000),
     pageUrl: (info.pageUrl || tab?.url || '').slice(0, 4000), frameId: info.frameId, tabId: tab?.id, createdAt: Date.now() };
-  void openPanel(tab?.windowId).catch(console.warn);
+  void openPanel(tab?.windowId, tab?.id).catch(console.warn);
   void storePendingContext(payload).then(() => {
     void chrome.runtime.sendMessage({ action: 'CONTEXT_MENU_CONTEXT', payload }).catch(() => {});
   }).catch(console.warn);
@@ -80,17 +121,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const respond = (promise: Promise<any>) => {
     promise.then(result => sendResponse({ success: true, ...result })).catch(err => sendResponse({ success: false, error: String(err?.message || err) }));
   };
-  if (message?.action === 'OPEN_SIDE_PANEL') { respond(openPanel(sender.tab?.windowId).then(() => ({}))); return true; }
+  if (message?.action === 'OPEN_SIDE_PANEL') { respond(openPanel(sender.tab?.windowId, sender.tab?.id).then(() => ({}))); return true; }
   if (message?.action === 'GET_WIDGET_SETTINGS') {
     respond((async () => {
       await widgetUpdates;
-      const [settings, local, state] = await Promise.all([getSettings(), chrome.storage.local.get('browser_agent_widget_position'), chrome.storage.session?.get(`widget_hidden_${sender.tab?.id}`)]);
-      return { enabled: settings.widgetEnabled, position: local.browser_agent_widget_position, hidden: Boolean(state?.[`widget_hidden_${sender.tab?.id}`]), language: resolveLanguage(settings.language) };
+      const [settings, state] = await Promise.all([getSettings(), chrome.storage.session?.get(`widget_hidden_${sender.tab?.id}`)]);
+      return { enabled: settings.widgetEnabled, hidden: Boolean(state?.[`widget_hidden_${sender.tab?.id}`]), language: resolveLanguage(settings.language) };
     })()); return true;
-  }
-  if (message?.action === 'SET_WIDGET_POSITION') {
-    if (!Number.isFinite(message.x) || !Number.isFinite(message.y)) return;
-    respond(chrome.storage.local.set({ browser_agent_widget_position: { x: Math.min(1, Math.max(0, message.x)), y: Math.min(1, Math.max(0, message.y)) } }).then(() => ({}))); return true;
   }
   if (message?.action === 'HIDE_WIDGET') {
     respond(Promise.resolve(chrome.storage.session?.set({ [`widget_hidden_${sender.tab?.id}`]: true })).then(() => ({}))); return true;

@@ -24,7 +24,7 @@ h4 { color:var(--agent-muted); font-size:11px; margin:8px 0; }
 pre { overflow:auto; max-width:100%; font:11px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; padding:10px; border:1px solid var(--agent-border); background:var(--agent-surface); white-space:pre-wrap; overflow-wrap:anywhere; }
 summary { cursor:pointer; padding:6px 0; }
 .app-shell { height:100%; height:100dvh; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
-.app-header { flex:none; display:flex; align-items:center; justify-content:space-between; gap:4px; padding:8px; border-bottom:1px solid var(--agent-border); background:var(--agent-card); }
+.app-header { flex:none; display:flex; align-items:center; justify-content:space-between; gap:4px; padding:8px; padding-top:calc(8px + env(safe-area-inset-top)); border-bottom:1px solid var(--agent-border); background:var(--agent-card); }
 .brand { min-width:0; flex:1; display:flex; align-items:center; gap:8px; }
 .brand h1 { font-size:13px; font-weight:600; }
 .agent-logo { display:block; width:28px; height:28px; flex:none; user-select:none; }
@@ -164,6 +164,7 @@ summary { cursor:pointer; padding:6px 0; }
 .prose-agent td,.prose-agent th { border:1px solid var(--agent-border); padding:5px 8px; }
 ::-webkit-scrollbar { width:7px; height:7px; } ::-webkit-scrollbar-thumb { background:#8885; } ::-webkit-scrollbar-track { background:transparent; }
 @media(max-width:500px) { .modal-root { padding:0; } .settings-panel,.history-panel { width:100%; height:100%; height:100dvh; border:0; } .settings-content { padding:12px; } }
+@media(max-width:360px) { .brand h1 { display:none; } }
 @media(max-width:340px) { .brand h1 { font-size:12px; } .provider-label { display:none; } .app-header { padding:6px; } .message-list { padding-left:10px; padding-right:10px; } }
 @media(pointer:coarse) { button { min-height:40px; } .header-actions button { min-width:34px; } .composer textarea { font-size:16px; } input,select,textarea { font-size:16px; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }

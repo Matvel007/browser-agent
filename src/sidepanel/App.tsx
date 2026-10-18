@@ -15,6 +15,15 @@ import { SettingsModal } from './components/SettingsModal';
 import { SessionsDrawer } from './components/SessionsDrawer';
 
 const PENDING_CONTEXT_KEY = 'browser_agent_pending_context';
+const sourceTabId = (() => {
+  try {
+    const value = Number(new URLSearchParams(location.search).get('sourceTabId'));
+    return Number.isInteger(value) && value > 0 ? value : undefined;
+  } catch { return undefined; }
+})();
+const embedded = (() => {
+  try { return new URLSearchParams(location.search).get('embedded') === '1'; } catch { return false; }
+})();
 type ContextPayload = { action: 'explain' | 'translate' | 'summarize'; text?: string; url?: string; pageUrl?: string; frameId?: number; tabId?: number; createdAt?: number };
 
 function contextDraft(payload: ContextPayload) {
@@ -61,6 +70,7 @@ export const App: React.FC = () => {
   const operation = useRef<{ id: string; controller: AbortController }>();
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const confirmationRef = useRef<PendingConfirmation | null>(null);
+  const [standalone, setStandalone] = useState(!embedded && sourceTabId != null);
   const saveQueue = useRef(Promise.resolve());
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const switchVersion = useRef(0);
@@ -136,6 +146,15 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (embedded || sourceTabId != null || typeof chrome === 'undefined' || !chrome.tabs?.getCurrent) return;
+    void chrome.tabs.getCurrent().then(tab => { if (tab?.id != null) setStandalone(true); }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (embedded) window.parent.postMessage({ type: 'browser-agent-ready' }, '*');
+  }, []);
+
+  useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)');
     const apply = () => document.documentElement.classList.toggle('dark', settings.theme === 'dark' || (settings.theme === 'system' && media.matches));
     apply(); media.addEventListener('change', apply); return () => media.removeEventListener('change', apply);
@@ -167,6 +186,12 @@ export const App: React.FC = () => {
   };
   const changeSession = (value: ChatSession) => { switchVersion.current++; cancel(true); clearTimeout(saveTimer.current); sessionRef.current = value; setSession(value); setInput(''); };
   const openSettings = (tab: SettingsTab) => { setSettingsTab(tab); setSettingsOpen(true); };
+  const closePanel = async () => {
+    if (sourceTabId != null) await chrome.tabs.update(sourceTabId, { active: true }).catch(() => {});
+    const current = await chrome.tabs.getCurrent().catch(() => undefined);
+    if (current?.id != null) await chrome.tabs.remove(current.id).catch(() => window.close());
+    else window.close();
+  };
 
   const save = async (value: AppSettings) => {
     await saveSettings(value); settingsRef.current = value; setSettings(value); await i18n.init(value.language);
@@ -247,7 +272,8 @@ export const App: React.FC = () => {
   return <div className="app-shell">
     <Header activeTab={activeTab} onOpenSettings={() => openSettings('models')} onOpenHistory={() => setHistoryOpen(true)}
       onNewChat={() => changeSession(newSession())} onClearChat={() => command('/clear')}
-      onToggleAttachDebugger={() => { if (activeTab) void runtime({ action: activeTab.isAttached ? 'DETACH_DEBUGGER' : 'ATTACH_DEBUGGER', payload: { tabId: activeTab.id } }).then(refreshTab).catch(err => setNotice(err.message)); }} />
+      onToggleAttachDebugger={() => { if (activeTab) void runtime({ action: activeTab.isAttached ? 'DETACH_DEBUGGER' : 'ATTACH_DEBUGGER', payload: { tabId: activeTab.id } }).then(refreshTab).catch(err => setNotice(err.message)); }}
+      onClose={standalone ? () => { void closePanel(); } : undefined} />
     {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label={tr('Закрыть уведомление', 'Dismiss notice')} onClick={() => setNotice('')}>×</button></div>}
     <MessageList messages={session.messages} sessionId={session.id} isGenerating={isGenerating} onOpenSettings={() => openSettings('models')}
       onRollback={(index, content) => {

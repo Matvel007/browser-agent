@@ -475,7 +475,7 @@ export class DevToolsService {
       && (!args.origin || cleanUrl(r.url).startsWith(args.origin)) && (!args.url || r.url.includes(args.url)));
     if (args.mode === 'har') {
       const headers = (value?: Record<string, string>) => Object.entries(value || {}).map(([name, value]) => ({ name, value }));
-      return { log: { version: '1.2', creator: { name: 'Browser Agent', version: '1.0.0' },
+      return { log: { version: '1.2', creator: { name: 'Browser Agent', version: __APP_VERSION__ },
         _coverage: { capturedAt: this.capturedAt.get(tabId), priorActivityAvailable: false, droppedRecords: this.dropped.get(tabId) || 0, bodiesIncluded: false },
         entries: rows.map(row => ({ startedDateTime: new Date(row.timestamp).toISOString(), time: row.duration ?? 0,
           request: { method: row.method, url: row.url, httpVersion: '', headers: headers(row.requestHeaders), queryString: [], cookies: [], headersSize: -1, bodySize: -1 },

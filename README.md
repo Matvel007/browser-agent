@@ -38,14 +38,21 @@
 ## Features
 
 - **Any provider** — RouterAI, AItunnel, OpenAI, DeepSeek, Google Gemini, Anthropic, or any OpenAI-compatible endpoint (OpenRouter, Groq, Ollama).
-- **29 browser tools** — page reading, element actions, tabs, JavaScript, console, network, DOM/CSS, screenshots, performance, debugger, raw CDP. Each tool can be turned off.
+- **34 browser tools** — page reading, element actions, frames, tabs, JavaScript, console, network, DOM/CSS, screenshots, performance, debugger, raw CDP. Each tool can be turned off.
+- **Complex pages** — open Shadow DOM, iframes, native `alert` / `confirm` / `prompt` dialogs, and element search by role, accessible name or visible text.
+- **Context menu actions** — explain or translate selected text, summarize a link or the current page. The panel opens automatically and the text or URL is inserted into the input.
+- **Safety controls** — passwords and payment fields are protected; optional confirmation before clicks, typing, navigation, JavaScript/CDP and storage changes; post-action verification and a repeated-action guard.
+- **Network and forms** — block or mock API responses, and attach chat artifacts (JSON, CSV, screenshots) to file inputs up to 2 MiB.
+- **Multi-tab work** — collect short summaries of up to 5 tabs for comparison.
 - **Web search** — DuckDuckGo by default, Tavily optional. Public URLs can be read without opening a tab.
 - **Bounded output** — every tool result fits a lean / balanced / full profile. Large payloads go to IndexedDB artifacts and are referenced by ID.
 - **Context you control** — full transcript kept separately from what the model sees. `/compact` adds a summary card; visible messages stay.
+- **Slash commands** — `/compact`, `/debug`, `/extract`, `/perf`, `/clear`, `/new`, `/model`, `/tools`, `/settings`, `/help`.
 - **Action summary** — all steps of one task collapse into a single expandable block inside the reply.
 - **Floating page button** — round chat button on pages. Drag it onto the close target to hide it on that tab.
 - **Adaptive UI** — works from 320 px wide panels up to desktop, light and dark themes, completion sound.
-- **Two languages** — English and Русский, detected from the browser by default.
+- **Mobile-friendly** — the floating button adapts to touch screens and safe areas; on mobile it opens an in-page chat sheet with a close button. If the page blocks embedding, the chat falls back to a tab.
+- **Two languages** — English and Русский. The interface and context menu follow the extension language setting.
 
 ---
 
@@ -62,7 +69,7 @@
 
 ### Quick install (no build)
 
-1. Download `browser-agent-1.0.0.zip` from the [latest release](https://github.com/Matvel007/browser-agent/releases/latest).
+1. Download the release archive from the [latest release](https://github.com/Matvel007/browser-agent/releases/latest).
 2. Unzip it into a folder you will keep (the extension runs from this folder).
 3. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select that folder.
 
@@ -76,6 +83,16 @@ npm run build
 ```
 
 Then open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder. Other Chromium browsers use the same flow on their extensions page.
+
+### Mobile build (no side panel)
+
+Mobile Chromium and Yandex builds may not support the Side Panel API and can warn about `side_panel` / `sidePanel`. Build the mobile variant instead — it has no side-panel manifest entries and opens the chat in a tab:
+
+```bash
+npm run build:mobile
+```
+
+Load `dist-mobile` in the extensions page. On mobile the floating button opens an in-page chat sheet; if the page blocks embedding, the chat opens in a tab with a close button that returns to the page.
 
 > Requires Node.js 22.12+, 24 or 26+.
 
@@ -95,7 +112,7 @@ Open **Settings** in the panel:
 - **Models** — choose a provider, paste the API key, select a model. *Test connection* sends one small request.
 - **Tools** — enable or disable each tool, configure search.
 - **Context** — set your model's real context window, output reserve and compaction threshold.
-- **Behavior** — extra instructions, step limit, automatic CDP attachment.
+- **Behavior** — extra instructions, step limit, automatic CDP attachment, confirmation before dangerous actions.
 - **Interface** — theme, language, floating button, sound.
 - **Diagnostics** — capability checks, artifact storage, configuration export without keys.
 
@@ -109,6 +126,13 @@ API keys stay in local extension storage and are never written to chat history o
 - Console and network capture start when the debugger attaches.
 - Opening the built-in DevTools can detach the extension's debugger.
 - DuckDuckGo may block programmatic queries; a CAPTCHA is reported as an error.
+- The floating button is unavailable on browser-internal pages, the extension store and some PDF viewers.
+- Mobile Chromium builds may not expose the side panel; the floating button opens an in-page chat sheet instead.
+- Some sites block embedded extension frames; the mobile chat then falls back to a tab.
+- Only open Shadow DOM is accessible; closed shadow roots are hidden by the browser.
+- File uploads are limited to 2 MiB; inputs that require a native picker may reject synthetic files.
+- Mocked network responses are limited to 100 KB.
+- Confirmation before dangerous actions is optional and off by default.
 - Some Chromium builds may block auto-loaded unpacked extensions; load `dist` manually from the extensions page.
 
 ---

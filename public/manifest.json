@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Browser Agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Autonomous AI assistant for Chromium browsers with Chrome DevTools Protocol automation",
   "permissions": [
     "sidePanel",
@@ -49,7 +49,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["locales/*", "icons/logo.svg"],
+      "resources": ["sidepanel.html", "assets/*", "locales/*", "icons/logo.svg"],
       "matches": ["<all_urls>"]
     }
   ]

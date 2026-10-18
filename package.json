@@ -1,6 +1,6 @@
 {
   "name": "browser-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Autonomous AI Agent for Chromium browsers with Chrome DevTools Protocol automation",
   "private": true,
   "type": "module",
@@ -8,6 +8,7 @@
     "dev": "node ./node_modules/vite/bin/vite.js",
     "icons": "node scripts/generate-icons.mjs",
     "build": "npm run typecheck && node ./node_modules/vite/bin/vite.js build",
+    "build:mobile": "npm run typecheck && node ./node_modules/vite/bin/vite.js build --outDir dist-mobile && node ./scripts/build-mobile.mjs",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.tests.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --config vitest.config.ts",
     "test:e2e": "npm run build && node ./node_modules/@playwright/test/cli.js test"
@@ -38,5 +39,7 @@
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },
-  "engines": { "node": "^22.12.0 || ^24.0.0 || >=26.0.0" }
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  }
 }
