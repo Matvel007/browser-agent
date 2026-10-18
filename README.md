@@ -47,6 +47,7 @@
 - **Web search** — DuckDuckGo by default, Tavily optional. Public URLs can be read without opening a tab.
 - **Bounded output** — every tool result fits a lean / balanced / full profile. Large payloads go to IndexedDB artifacts and are referenced by ID.
 - **Context you control** — full transcript kept separately from what the model sees. `/compact` adds a summary card; visible messages stay.
+- **Chat attachments** — attach up to 8 images or text files with the paperclip; they are sent with the message and shown in history.
 - **Slash commands** — `/compact`, `/debug`, `/extract`, `/perf`, `/clear`, `/new`, `/model`, `/tools`, `/settings`, `/help`.
 - **Action summary** — all steps of one task collapse into a single expandable block inside the reply.
 - **Floating page button** — round chat button on pages. Drag it onto the close target to hide it on that tab.
